@@ -35,6 +35,7 @@ services:
     image: ghcr.io/dziesio/ecr-harvester:latest
     container_name: ecr-harvester
     restart: unless-stopped
+    shm_size: 128m
     depends_on:
       postgres:
         condition: service_healthy
