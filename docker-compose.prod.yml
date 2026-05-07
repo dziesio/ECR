@@ -1,5 +1,5 @@
 # Production compose — uses pre-built images from ghcr.io instead of local builds.
-# On the VPS: docker compose -f docker-compose.prod.yml --env-file .env up -d
+# On the VPS: use deploy.sh instead of running docker compose directly.
 
 name: ecr
 
@@ -9,6 +9,12 @@ services:
     image: postgres:16-alpine
     container_name: ecr-postgres
     restart: unless-stopped
+    command: >
+      postgres
+        -c shared_buffers=32MB
+        -c effective_cache_size=64MB
+        -c max_connections=20
+        -c work_mem=2MB
     environment:
       POSTGRES_DB: ecr_harvester
       POSTGRES_USER: postgres
@@ -20,6 +26,10 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    deploy:
+      resources:
+        limits:
+          memory: 96M
 
   ecr-harvester:
     image: ghcr.io/dziesio/ecr-harvester:latest
@@ -45,6 +55,11 @@ services:
       BC_PASSWORD: ${BC_PASSWORD:-}
       BC_ENABLED: ${BC_ENABLED:-false}
       SELENIUM_HEADLESS: "true"
+      JAVA_TOOL_OPTIONS: "-Xms64m -Xmx180m -XX:+UseG1GC -XX:+UseContainerSupport"
+    deploy:
+      resources:
+        limits:
+          memory: 420M
 
   ecr-api:
     image: ghcr.io/dziesio/ecr-api:latest
@@ -59,6 +74,11 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/ecr_harvester
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: postgres
+      JAVA_TOOL_OPTIONS: "-Xms32m -Xmx120m -XX:+UseG1GC -XX:+UseContainerSupport"
+    deploy:
+      resources:
+        limits:
+          memory: 180M
 
   ecr-frontend:
     image: ghcr.io/dziesio/ecr-frontend:latest
@@ -76,6 +96,11 @@ services:
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: postgres
       ECR_API_BASE_URL: http://ecr-api:8081
+      JAVA_TOOL_OPTIONS: "-Xms32m -Xmx120m -XX:+UseG1GC -XX:+UseContainerSupport"
+    deploy:
+      resources:
+        limits:
+          memory: 180M
 
   ecr-notifier:
     image: ghcr.io/dziesio/ecr-notifier:latest
@@ -93,6 +118,11 @@ services:
       ECR_API_BASE_URL: http://ecr-api:8081
       BARK_DEVICE_KEY: ${BARK_DEVICE_KEY}
       NOTIFIER_POLL_INTERVAL_MS: ${NOTIFIER_POLL_INTERVAL_MS:-300000}
+      JAVA_TOOL_OPTIONS: "-Xms32m -Xmx96m -XX:+UseG1GC -XX:+UseContainerSupport"
+    deploy:
+      resources:
+        limits:
+          memory: 150M
 
 volumes:
   postgres_data:
