@@ -16,8 +16,8 @@ done
 echo "Starting ecr-harvester (first scrape)..."
 docker compose -f docker-compose.prod.yml up -d ecr-harvester
 
-echo "Waiting 3 minutes for first scrape to complete..."
-sleep 180
+echo "Waiting 10 minutes for first scrape to complete..."
+sleep 600
 
 echo "Starting remaining services..."
 docker compose -f docker-compose.prod.yml up -d ecr-api ecr-frontend ecr-notifier
