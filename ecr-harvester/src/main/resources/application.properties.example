@@ -1,0 +1,46 @@
+# ─── Database ────────────────────────────────────────────────────────────────
+spring.datasource.url=jdbc:postgresql://localhost:5432/ecr_harvester
+spring.datasource.username=postgres
+spring.datasource.password=postgres
+spring.datasource.driver-class-name=org.postgresql.Driver
+
+# ─── JPA / Hibernate ─────────────────────────────────────────────────────────
+spring.jpa.hibernate.ddl-auto=validate
+spring.jpa.show-sql=false
+spring.jpa.properties.hibernate.format_sql=true
+spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.PostgreSQLDialect
+
+# ─── Flyway ──────────────────────────────────────────────────────────────────
+spring.flyway.enabled=true
+spring.flyway.locations=classpath:db/migration
+
+# ─── Librus credentials (fill these in before running!) ──────────────────────
+librus.username=YOUR_LIBRUS_LOGIN
+librus.password=YOUR_LIBRUS_PASSWORD
+librus.full-name=Student Name
+
+# ─── Librus URLs ─────────────────────────────────────────────────────────────
+librus.url.login=https://portal.librus.pl/rodzina/synergia/loguj
+librus.url.grades=https://synergia.librus.pl/przegladaj_oceny/uczen
+librus.url.messages=https://synergia.librus.pl/wiadomosci
+librus.url.attendance=https://synergia.librus.pl/przegladaj_nb/uczen
+
+# ─── Selenium ────────────────────────────────────────────────────────────────
+selenium.headless=true
+selenium.page-load-timeout=30
+selenium.implicit-wait=0
+
+# ─── Scraping schedule ───────────────────────────────────────────────────────
+# Nominal interval and max random jitter (both in minutes)
+scraper.interval-minutes=10
+scraper.jitter-minutes=3
+# Internal delay ranges (milliseconds) — set to 0/1 in tests
+scraper.page-jitter-min-ms=1000
+scraper.page-jitter-max-ms=4000
+scraper.human-type-delay-min-ms=60
+scraper.human-type-delay-max-ms=180
+
+# ─── Logging ─────────────────────────────────────────────────────────────────
+logging.level.com.ecrharv=INFO
+logging.level.org.openqa.selenium=WARN
+logging.level.io.github.bonigarcia=WARN

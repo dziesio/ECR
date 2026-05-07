@@ -1,0 +1,75 @@
+name: ecr
+
+services:
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: ecr-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ecr_harvester
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ecr_harvester"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  ecr-harvester:
+    build: ./ecr-harvester
+    container_name: ecr-harvester
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/ecr_harvester
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+      LIBRUS_USERNAME: ${LIBRUS_USERNAME}
+      LIBRUS_PASSWORD: ${LIBRUS_PASSWORD}
+      LIBRUS_FULL_NAME: ${LIBRUS_FULL_NAME:-Student}
+      LIBRUS_URL_LOGIN: ${LIBRUS_URL_LOGIN:-https://portal.librus.pl/rodzina}
+      LIBRUS_URL_GRADES: ${LIBRUS_URL_GRADES:-https://synergia.librus.pl/przegladaj_oceny/uczen}
+      LIBRUS_URL_MESSAGES: ${LIBRUS_URL_MESSAGES:-https://synergia.librus.pl/wiadomosci}
+      LIBRUS_URL_ATTENDANCE: ${LIBRUS_URL_ATTENDANCE:-https://synergia.librus.pl/przegladaj_nb/uczen}
+      SCRAPER_INTERVAL_MINUTES: ${SCRAPER_INTERVAL_MINUTES:-10}
+      SCRAPER_JITTER_MINUTES: ${SCRAPER_JITTER_MINUTES:-3}
+      SELENIUM_HEADLESS: "true"
+
+  ecr-api:
+    build: ./ecr-api
+    container_name: ecr-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8081:8081"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/ecr_harvester
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+
+  ecr-frontend:
+    build: ./ecr-frontend
+    container_name: ecr-frontend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ecr-api:
+        condition: service_started
+    ports:
+      - "8082:8082"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/ecr_harvester
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+      ECR_API_BASE_URL: http://ecr-api:8081
+
+volumes:
+  postgres_data:

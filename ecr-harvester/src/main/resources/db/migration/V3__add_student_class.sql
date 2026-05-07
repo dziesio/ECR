@@ -1,0 +1,2 @@
+ALTER TABLE students
+    ADD COLUMN IF NOT EXISTS class_name VARCHAR(50);
