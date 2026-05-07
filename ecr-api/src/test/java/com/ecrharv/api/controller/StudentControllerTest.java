@@ -3,8 +3,11 @@ package com.ecrharv.api.controller;
 import com.ecrharv.api.entity.Attendance;
 import com.ecrharv.api.entity.Grade;
 import com.ecrharv.api.entity.Message;
+import com.ecrharv.api.entity.Person;
+import com.ecrharv.api.entity.Source;
 import com.ecrharv.api.entity.Student;
 import com.ecrharv.api.enums.AttendanceStatus;
+import com.ecrharv.api.repository.AnnouncementRepository;
 import com.ecrharv.api.repository.AttendanceRepository;
 import com.ecrharv.api.repository.GradeRepository;
 import com.ecrharv.api.repository.MessageRepository;
@@ -34,10 +37,11 @@ class StudentControllerTest {
 
     @Autowired private MockMvc mockMvc;
 
-    @MockBean private StudentRepository    studentRepository;
-    @MockBean private GradeRepository      gradeRepository;
-    @MockBean private MessageRepository    messageRepository;
-    @MockBean private AttendanceRepository attendanceRepository;
+    @MockBean private StudentRepository      studentRepository;
+    @MockBean private GradeRepository        gradeRepository;
+    @MockBean private MessageRepository      messageRepository;
+    @MockBean private AttendanceRepository   attendanceRepository;
+    @MockBean private AnnouncementRepository announcementRepository;
 
     private UUID studentId;
     private Student student;
@@ -233,12 +237,23 @@ class StudentControllerTest {
         return g;
     }
 
-    private Message buildMessage(String sender, String subject, LocalDateTime sentAt) {
+    private Message buildMessage(String senderName, String subject, LocalDateTime sentAt) {
+        Source source = new Source();
+        ReflectionTestUtils.setField(source, "id",          (short) 1);
+        ReflectionTestUtils.setField(source, "code",        "LIBRUS");
+        ReflectionTestUtils.setField(source, "displayName", "Librus");
+
+        Person person = new Person();
+        ReflectionTestUtils.setField(person, "id",       UUID.randomUUID());
+        ReflectionTestUtils.setField(person, "source",   source);
+        ReflectionTestUtils.setField(person, "fullName", senderName);
+        ReflectionTestUtils.setField(person, "role",     "");
+
         Message m = new Message();
         ReflectionTestUtils.setField(m, "id",              UUID.randomUUID());
         ReflectionTestUtils.setField(m, "student",         student);
         ReflectionTestUtils.setField(m, "librusMessageId", UUID.randomUUID().toString());
-        ReflectionTestUtils.setField(m, "sender",          sender);
+        ReflectionTestUtils.setField(m, "sender",          person);
         ReflectionTestUtils.setField(m, "subject",         subject);
         ReflectionTestUtils.setField(m, "content",         "Treść wiadomości");
         ReflectionTestUtils.setField(m, "sentAt",          sentAt);
