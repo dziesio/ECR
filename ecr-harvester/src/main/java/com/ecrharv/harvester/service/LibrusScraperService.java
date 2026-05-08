@@ -11,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
+import org.jsoup.nodes.Node;
 import org.jsoup.nodes.TextNode;
 import org.jsoup.select.Elements;
 import org.springframework.beans.factory.annotation.Value;
@@ -367,11 +368,20 @@ public class LibrusScraperService {
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
-    /** Preserves line breaks from {@code <br>} tags that JSoup's {@code .text()} silently drops. */
     private String extractText(Element el) {
-        Element clone = el.clone();
-        clone.select("br").forEach(br -> br.replaceWith(new TextNode("\n")));
-        return clone.wholeText().strip();
+        StringBuilder sb = new StringBuilder();
+        for (Node node : el.childNodes()) {
+            if (node instanceof TextNode tn) {
+                sb.append(tn.text());
+            } else if (node instanceof Element child) {
+                if ("br".equals(child.tagName())) {
+                    sb.append('\n');
+                } else {
+                    sb.append(extractText(child));
+                }
+            }
+        }
+        return sb.toString().strip();
     }
 
     private String tableValue(Document doc, String label) {
