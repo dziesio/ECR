@@ -1,79 +1,68 @@
 package com.ecrharv.harvester.service;
 
-import com.ecrharv.harvester.config.SeleniumConfig;
+import com.ecrharv.harvester.config.LibrusHttpClient;
+import com.ecrharv.harvester.config.LibrusSession;
 import com.ecrharv.harvester.scraping.ScrapedData;
+import org.jsoup.Jsoup;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.openqa.selenium.*;
 import org.springframework.test.util.ReflectionTestUtils;
 
-import java.util.List;
+import java.io.IOException;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class LibrusScraperServiceTest {
 
-    @Mock private SeleniumConfig seleniumConfig;
+    @Mock private LibrusHttpClient librusHttpClient;
+    @Mock private LibrusSession session;
 
     @InjectMocks private LibrusScraperService service;
 
-    private WebDriver driver;
-
     @BeforeEach
-    void setUp() {
-        driver = mock(WebDriver.class, withSettings().extraInterfaces(JavascriptExecutor.class));
-        when(seleniumConfig.createDriver()).thenReturn(driver);
+    void setUp() throws IOException {
+        when(librusHttpClient.openSession()).thenReturn(session);
+        when(session.getPage(anyString()))
+                .thenReturn(Jsoup.parse("<html><body></body></html>"));
 
-        // Inject @Value fields — no Spring context needed
-        ReflectionTestUtils.setField(service, "username",             "testuser");
-        ReflectionTestUtils.setField(service, "password",             "testpass");
-        ReflectionTestUtils.setField(service, "urlLogin",             "https://portal.librus.pl/login");
-        ReflectionTestUtils.setField(service, "urlGrades",            "https://synergia.librus.pl/grades");
-        ReflectionTestUtils.setField(service, "urlMessages",          "https://synergia.librus.pl/messages");
-        ReflectionTestUtils.setField(service, "urlAttendance",        "https://synergia.librus.pl/attendance");
-        ReflectionTestUtils.setField(service, "urlAnnouncements",     "https://synergia.librus.pl/announcements");
-        // Zero-out all delays so tests run in milliseconds
-        ReflectionTestUtils.setField(service, "pageJitterMinMs",      0L);
-        ReflectionTestUtils.setField(service, "pageJitterMaxMs",      1L);
-        ReflectionTestUtils.setField(service, "humanTypeDelayMinMs",  0L);
-        ReflectionTestUtils.setField(service, "humanTypeDelayMaxMs",  1L);
+        ReflectionTestUtils.setField(service, "urlGrades",        "https://synergia.librus.pl/grades");
+        ReflectionTestUtils.setField(service, "urlMessages",      "https://synergia.librus.pl/messages");
+        ReflectionTestUtils.setField(service, "urlAttendance",    "https://synergia.librus.pl/attendance");
+        ReflectionTestUtils.setField(service, "urlAnnouncements", "https://synergia.librus.pl/announcements");
+        ReflectionTestUtils.setField(service, "pageJitterMinMs",  0L);
+        ReflectionTestUtils.setField(service, "pageJitterMaxMs",  1L);
     }
 
-    // ── Driver lifecycle ──────────────────────────────────────────────────────
+    // ── Session lifecycle ─────────────────────────────────────────────────────
 
     @Test
-    void scrapeAll_closesDriverOnSuccess() {
-        setupSuccessfulLogin();
-        when(driver.findElements(any(By.class))).thenReturn(List.of());
-
+    void scrapeAll_closesSessionOnSuccess() throws IOException {
         service.scrapeAll(Set.of(), Set.of());
-
-        verify(driver).quit();
+        verify(session).close();
     }
 
     @Test
-    void scrapeAll_closesDriverEvenWhenExceptionIsThrown() {
-        doThrow(new WebDriverException("Network error")).when(driver).get(anyString());
+    void scrapeAll_closesSessionEvenWhenExceptionIsThrown() throws IOException {
+        when(session.getPage(anyString())).thenThrow(new IOException("Network error"));
 
         assertThatThrownBy(() -> service.scrapeAll(Set.of(), Set.of()))
                 .isInstanceOf(RuntimeException.class);
 
-        verify(driver).quit();
+        verify(session).close();
     }
 
     @Test
-    void scrapeAll_wrapsExceptionsInRuntimeException() {
-        doThrow(new WebDriverException("Crashed")).when(driver).get(anyString());
+    void scrapeAll_wrapsExceptionsInRuntimeException() throws IOException {
+        when(session.getPage(anyString())).thenThrow(new IOException("Timeout"));
 
         assertThatThrownBy(() -> service.scrapeAll(Set.of(), Set.of()))
                 .isInstanceOf(RuntimeException.class)
@@ -81,55 +70,31 @@ class LibrusScraperServiceTest {
     }
 
     @Test
-    void scrapeAll_createsExactlyOneDriver() {
-        setupSuccessfulLogin();
-        when(driver.findElements(any(By.class))).thenReturn(List.of());
-
+    void scrapeAll_createsExactlyOneSession() throws IOException {
         service.scrapeAll(Set.of(), Set.of());
-
-        verify(seleniumConfig, times(1)).createDriver();
+        verify(librusHttpClient, times(1)).openSession();
     }
 
     // ── Result structure ──────────────────────────────────────────────────────
 
     @Test
     void scrapeAll_returnsEmptyListsWhenTablesNotFound() {
-        setupSuccessfulLogin();
-        when(driver.findElements(any(By.class))).thenReturn(List.of());
-
         ScrapedData.ScrapeResult result = service.scrapeAll(Set.of(), Set.of());
 
         assertThat(result.grades()).isEmpty();
         assertThat(result.messages()).isEmpty();
         assertThat(result.attendance()).isEmpty();
+        assertThat(result.announcements()).isEmpty();
     }
 
     @Test
-    void scrapeAll_navigatesToAllThreeTargetUrls() {
-        setupSuccessfulLogin();
-        when(driver.findElements(any(By.class))).thenReturn(List.of());
-
+    void scrapeAll_navigatesToAllTargetUrls() throws IOException {
         service.scrapeAll(Set.of(), Set.of());
 
-        verify(driver, atLeast(1)).get("https://synergia.librus.pl/grades");
-        verify(driver, atLeast(1)).get("https://synergia.librus.pl/messages/5");
-        verify(driver, atLeast(1)).get("https://synergia.librus.pl/messages/6");
-        verify(driver, atLeast(1)).get("https://synergia.librus.pl/attendance");
-        verify(driver, atLeast(1)).get("https://synergia.librus.pl/announcements");
-    }
-
-    // ── Helpers ───────────────────────────────────────────────────────────────
-
-    /**
-     * Configures the mock WebDriver so that the login sequence succeeds:
-     * - any findElement() returns a clickable, displayable mock element
-     * - getCurrentUrl() returns a synergia.librus.pl URL (satisfies urlContains check)
-     */
-    private void setupSuccessfulLogin() {
-        WebElement mockElement = mock(WebElement.class);
-        when(mockElement.isDisplayed()).thenReturn(true);
-        when(mockElement.isEnabled()).thenReturn(true);
-        when(driver.findElement(any(By.class))).thenReturn(mockElement);
-        when(driver.getCurrentUrl()).thenReturn("https://synergia.librus.pl/dashboard");
+        verify(session, atLeast(1)).getPage("https://synergia.librus.pl/grades");
+        verify(session, atLeast(1)).getPage("https://synergia.librus.pl/messages/5");
+        verify(session, atLeast(1)).getPage("https://synergia.librus.pl/messages/6");
+        verify(session, atLeast(1)).getPage("https://synergia.librus.pl/attendance");
+        verify(session, atLeast(1)).getPage("https://synergia.librus.pl/announcements");
     }
 }

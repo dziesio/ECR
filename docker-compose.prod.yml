@@ -35,7 +35,6 @@ services:
     image: ghcr.io/dziesio/ecr-harvester:latest
     container_name: ecr-harvester
     restart: unless-stopped
-    shm_size: 128m
     depends_on:
       postgres:
         condition: service_healthy
@@ -46,22 +45,17 @@ services:
       LIBRUS_USERNAME: ${LIBRUS_USERNAME}
       LIBRUS_PASSWORD: ${LIBRUS_PASSWORD}
       LIBRUS_FULL_NAME: ${LIBRUS_FULL_NAME:-Student}
-      LIBRUS_URL_LOGIN: ${LIBRUS_URL_LOGIN:-https://portal.librus.pl/rodzina/synergia/loguj}
       LIBRUS_URL_GRADES: ${LIBRUS_URL_GRADES:-https://synergia.librus.pl/przegladaj_oceny/uczen}
       LIBRUS_URL_MESSAGES: ${LIBRUS_URL_MESSAGES:-https://synergia.librus.pl/wiadomosci}
       LIBRUS_URL_ATTENDANCE: ${LIBRUS_URL_ATTENDANCE:-https://synergia.librus.pl/przegladaj_nb/uczen}
       LIBRUS_URL_ANNOUNCEMENTS: ${LIBRUS_URL_ANNOUNCEMENTS:-https://synergia.librus.pl/ogloszenia}
       SCRAPER_INTERVAL_MINUTES: ${SCRAPER_INTERVAL_MINUTES:-10}
       SCRAPER_JITTER_MINUTES: ${SCRAPER_JITTER_MINUTES:-3}
-      BC_USERNAME: ${BC_USERNAME:-}
-      BC_PASSWORD: ${BC_PASSWORD:-}
-      BC_ENABLED: ${BC_ENABLED:-false}
-      SELENIUM_HEADLESS: "true"
       JAVA_TOOL_OPTIONS: "-Xms64m -Xmx180m -XX:+UseG1GC -XX:+UseContainerSupport"
     deploy:
       resources:
         limits:
-          memory: 420M
+          memory: 256M
 
   ecr-api:
     image: ghcr.io/dziesio/ecr-api:latest

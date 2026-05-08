@@ -1,6 +1,7 @@
 package com.ecrharv.harvester.service;
 
-import com.ecrharv.harvester.config.SeleniumConfig;
+import com.ecrharv.harvester.config.LibrusHttpClient;
+import com.ecrharv.harvester.config.LibrusSession;
 import com.ecrharv.harvester.enums.AttendanceStatus;
 import com.ecrharv.harvester.enums.MessageSource;
 import com.ecrharv.harvester.enums.MessageType;
@@ -8,17 +9,16 @@ import com.ecrharv.harvester.scraping.LibrusKeys;
 import com.ecrharv.harvester.scraping.ScrapedData;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.openqa.selenium.*;
-import org.openqa.selenium.support.ui.ExpectedConditions;
-import org.openqa.selenium.support.ui.WebDriverWait;
-
+import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
+import org.jsoup.select.Elements;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -33,16 +33,7 @@ import java.util.concurrent.ThreadLocalRandom;
 @RequiredArgsConstructor
 public class LibrusScraperService {
 
-    private final SeleniumConfig seleniumConfig;
-
-    @Value("${librus.username}")
-    private String username;
-
-    @Value("${librus.password}")
-    private String password;
-
-    @Value("${librus.url.login}")
-    private String urlLogin;
+    private final LibrusHttpClient librusHttpClient;
 
     @Value("${librus.url.grades}")
     private String urlGrades;
@@ -62,138 +53,46 @@ public class LibrusScraperService {
     @Value("${scraper.page-jitter-max-ms:4000}")
     private long pageJitterMaxMs;
 
-    @Value("${scraper.human-type-delay-min-ms:60}")
-    private long humanTypeDelayMinMs;
-
-    @Value("${scraper.human-type-delay-max-ms:180}")
-    private long humanTypeDelayMaxMs;
-
     private static final DateTimeFormatter DATE_FMT     = DateTimeFormatter.ofPattern("yyyy-MM-dd");
     private static final DateTimeFormatter DATETIME_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     // ── Public API ───────────────────────────────────────────────────────────
 
     public ScrapedData.ScrapeResult scrapeAll(Set<String> knownMessageIds, Set<String> knownAnnouncementIds) {
-        WebDriver driver = seleniumConfig.createDriver();
-        WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(15));
+        try (LibrusSession session = librusHttpClient.openSession()) {
+            Document gradesDoc = session.getPage(urlGrades);
 
-        try {
-            login(driver, wait);
-
-            ScrapedData.StudentInfo studentInfo = scrapeStudentInfo(driver, wait);
-
-            List<ScrapedData.GradeRecord> grades = scrapeGrades(driver, wait);
+            ScrapedData.StudentInfo studentInfo = scrapeStudentInfo(gradesDoc);
+            List<ScrapedData.GradeRecord> grades = scrapeGrades(gradesDoc);
             jitter();
 
-            List<ScrapedData.MessageRecord> messages = scrapeMessages(driver, wait, knownMessageIds);
+            List<ScrapedData.MessageRecord> messages = scrapeMessages(session, knownMessageIds);
             jitter();
 
-            List<ScrapedData.AttendanceRecord> attendance = scrapeAttendance(driver, wait);
+            List<ScrapedData.AttendanceRecord> attendance = scrapeAttendance(session);
             jitter();
 
-            List<ScrapedData.AnnouncementRecord> announcements = scrapeAnnouncements(driver, wait, knownAnnouncementIds);
+            List<ScrapedData.AnnouncementRecord> announcements = scrapeAnnouncements(session, knownAnnouncementIds);
 
             return new ScrapedData.ScrapeResult(studentInfo, grades, messages, attendance, announcements);
 
-        } catch (Exception e) {
+        } catch (IOException e) {
             log.error("Scraping session failed: {}", e.getMessage(), e);
             throw new RuntimeException("Scraping session failed", e);
-        } finally {
-            driver.quit();
-            log.debug("WebDriver closed");
-        }
-    }
-
-    // ── Login ────────────────────────────────────────────────────────────────
-
-    private void login(WebDriver driver, WebDriverWait wait) {
-        log.info("Navigating to Librus portal");
-        driver.get(urlLogin);
-        jitter();
-
-        // Step 1 — dismiss cookie/GDPR consent if it appears
-        dismissCookieConsent(driver);
-
-        // Step 2 — open the Synergia dropdown and click "Zaloguj"
-        try {
-            log.info("Opening Synergia login dropdown");
-            wait.until(ExpectedConditions.elementToBeClickable(
-                    By.cssSelector(LibrusKeys.SEL_SYNERGIA_BTN))).click();
-
-            wait.until(ExpectedConditions.elementToBeClickable(
-                    By.xpath(LibrusKeys.XPATH_ZALOGUJ_LINK))).click();
-
-            jitter();
-        } catch (TimeoutException e) {
-            throw new RuntimeException(
-                "Could not find Synergia login dropdown — portal layout may have changed", e
-            );
-        }
-
-        // Step 3 — fill credentials on the login form
-
-        // The Synergia login form may be embedded in an iframe — switch into it if present
-        try {
-            List<WebElement> frames = driver.findElements(By.tagName("iframe"));
-            if (!frames.isEmpty()) {
-                log.info("Found {} iframe(s) — switching into first one", frames.size());
-                driver.switchTo().frame(frames.get(0));
-            } else {
-                log.info("No iframes found — searching in main document");
-            }
-        } catch (Exception e) {
-            log.warn("iframe switch attempt failed: {}", e.getMessage());
-        }
-
-        try {
-            WebElement loginField = wait.until(
-                    ExpectedConditions.elementToBeClickable(By.id(LibrusKeys.LOGIN_FIELD_ID))
-            );
-            WebElement passField = driver.findElement(By.id(LibrusKeys.PASS_FIELD_ID));
-
-            jsSetValue(driver, loginField, username);
-            jitter();
-            jsSetValue(driver, passField, password);
-            jitter();
-
-            driver.findElement(By.id(LibrusKeys.SUBMIT_BTN_ID)).click();
-
-            wait.until(ExpectedConditions.urlContains(LibrusKeys.DOMAIN_SYNERGIA));
-            log.info("Login successful");
-
-        } catch (TimeoutException e) {
-            throw new RuntimeException(
-                "Login failed — check credentials or verify selectors against the live portal", e
-            );
-        }
-    }
-
-    /** Best-effort: clicks the cookie/GDPR consent button if one appears within 5 s. */
-    private void dismissCookieConsent(WebDriver driver) {
-        try {
-            WebDriverWait shortWait = new WebDriverWait(driver, Duration.ofSeconds(5));
-            WebElement btn = shortWait.until(
-                    ExpectedConditions.elementToBeClickable(By.xpath(LibrusKeys.XPATH_COOKIE_CONSENT))
-            );
-            btn.click();
-            log.info("Cookie consent dismissed");
-            jitter();
-        } catch (TimeoutException e) {
-            log.debug("No cookie consent banner found — continuing");
         }
     }
 
     // ── Student info ─────────────────────────────────────────────────────────
 
-    private ScrapedData.StudentInfo scrapeStudentInfo(WebDriver driver, WebDriverWait wait) {
+    private ScrapedData.StudentInfo scrapeStudentInfo(Document doc) {
         log.info("Scraping student info");
-        driver.get(urlGrades);
-        jitter();
         try {
-            WebElement p = wait.until(
-                    ExpectedConditions.presenceOfElementLocated(By.cssSelector(LibrusKeys.SEL_STUDENT_INFO))
-            );
-            String text = p.getText();
+            Element p = doc.selectFirst(LibrusKeys.SEL_STUDENT_INFO);
+            if (p == null) {
+                log.warn("Student info element not found");
+                return null;
+            }
+            String text = p.text();
             String fullName  = extractStudentField(text, "Uczeń:");
             String className = extractStudentField(text, "Klasa:");
             log.info("Student info scraped — class: '{}'", className);
@@ -210,55 +109,46 @@ public class LibrusScraperService {
         String after = text.substring(idx + label.length());
         int newline = after.indexOf('\n');
         if (newline >= 0) after = after.substring(0, newline);
-        return after.replace(' ', ' ').strip();
+        return after.strip();
     }
 
     // ── Grades ───────────────────────────────────────────────────────────────
 
-    private List<ScrapedData.GradeRecord> scrapeGrades(WebDriver driver, WebDriverWait wait) {
+    private List<ScrapedData.GradeRecord> scrapeGrades(Document doc) {
         log.info("Scraping grades");
         List<ScrapedData.GradeRecord> grades = new ArrayList<>();
 
-        driver.get(urlGrades);
-        jitter();
+        if (doc.selectFirst(LibrusKeys.SEL_GRADES_TABLE) == null) {
+            log.warn("Grades table not found — page layout may have changed");
+            return grades;
+        }
 
-        try {
-            wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(LibrusKeys.SEL_GRADES_TABLE)));
-            List<WebElement> rows = driver.findElements(By.cssSelector(LibrusKeys.SEL_GRADES_ROWS));
+        for (Element row : doc.select(LibrusKeys.SEL_GRADES_ROWS)) {
+            try {
+                Elements cells = row.select("td");
+                if (cells.size() < 2) continue;
 
-            for (WebElement row : rows) {
-                try {
-                    List<WebElement> cells = row.findElements(By.tagName("td"));
-                    if (cells.size() < 2) continue;
+                String subjectName = cells.get(0).text().trim();
+                if (subjectName.isBlank()) continue;
 
-                    String subjectName = cells.get(0).getText().trim();
-                    if (subjectName.isBlank()) continue;
+                for (Element span : cells.get(1).select(LibrusKeys.SEL_GRADE_SPAN)) {
+                    String value = span.text().trim();
+                    if (value.isBlank()) continue;
 
-                    List<WebElement> gradeSpans = cells.get(1).findElements(
-                            By.cssSelector(LibrusKeys.SEL_GRADE_SPAN)
-                    );
+                    GradeDetails details = parseGradeTitle(span.attr("title"));
 
-                    for (WebElement span : gradeSpans) {
-                        String value = span.getText().trim();
-                        if (value.isBlank()) continue;
-
-                        GradeDetails details = parseGradeTitle(span.getAttribute("title"));
-
-                        grades.add(new ScrapedData.GradeRecord(
-                                subjectName,
-                                details.category(),
-                                value,
-                                details.weight(),
-                                details.dateIssued(),
-                                details.teacher()
-                        ));
-                    }
-                } catch (StaleElementReferenceException e) {
-                    log.warn("Stale element in grades table — row skipped");
+                    grades.add(new ScrapedData.GradeRecord(
+                            subjectName,
+                            details.category(),
+                            value,
+                            details.weight(),
+                            details.dateIssued(),
+                            details.teacher()
+                    ));
                 }
+            } catch (Exception e) {
+                log.warn("Could not parse grade row: {}", e.getMessage());
             }
-        } catch (TimeoutException e) {
-            log.warn("Grades table not found at {} — page layout may have changed", urlGrades);
         }
 
         log.info("Scraped {} grade entries", grades.size());
@@ -267,80 +157,80 @@ public class LibrusScraperService {
 
     // ── Messages ─────────────────────────────────────────────────────────────
 
-    private List<ScrapedData.MessageRecord> scrapeMessages(WebDriver driver, WebDriverWait wait,
-                                                            Set<String> knownMessageIds) {
+    private List<ScrapedData.MessageRecord> scrapeMessages(LibrusSession session,
+                                                            Set<String> knownMessageIds) throws IOException {
         log.info("Scraping messages");
         List<ScrapedData.MessageRecord> messages = new ArrayList<>();
-        messages.addAll(scrapeMessageFolder(driver, wait, urlMessages + LibrusKeys.MSG_INBOX_SUFFIX, MessageType.INBOX, knownMessageIds));
+        messages.addAll(scrapeMessageFolder(session, urlMessages + LibrusKeys.MSG_INBOX_SUFFIX,
+                MessageType.INBOX, knownMessageIds));
         jitter();
-        messages.addAll(scrapeMessageFolder(driver, wait, urlMessages + LibrusKeys.MSG_SENT_SUFFIX, MessageType.SENT, knownMessageIds));
+        messages.addAll(scrapeMessageFolder(session, urlMessages + LibrusKeys.MSG_SENT_SUFFIX,
+                MessageType.SENT, knownMessageIds));
         return messages;
     }
 
-    private List<ScrapedData.MessageRecord> scrapeMessageFolder(WebDriver driver, WebDriverWait wait,
-                                                                 String url, MessageType type,
-                                                                 Set<String> knownMessageIds) {
+    private List<ScrapedData.MessageRecord> scrapeMessageFolder(LibrusSession session,
+                                                                  String url, MessageType type,
+                                                                  Set<String> knownMessageIds) throws IOException {
         log.info("Scraping {} messages from {}", type, url);
         List<ScrapedData.MessageRecord> messages = new ArrayList<>();
 
-        driver.get(url);
-        jitter();
+        Document doc = session.getPage(url);
 
-        try {
-            wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(LibrusKeys.SEL_MSG_TABLE)));
-
-            List<String> hrefs   = new ArrayList<>();
-            List<String> msgIds  = new ArrayList<>();
-            List<LocalDateTime> sentAts = new ArrayList<>();
-
-            for (WebElement row : driver.findElements(By.cssSelector(LibrusKeys.SEL_MSG_ROWS))) {
-                try {
-                    List<WebElement> cells = row.findElements(By.tagName("td"));
-                    if (cells.size() < 5) continue;
-
-                    String href = row.findElement(By.cssSelector(LibrusKeys.SEL_MSG_LINK)).getAttribute("href");
-                    if (href != null && href.contains(LibrusKeys.MSG_HREF_FRAGMENT)) {
-                        String numericId = href.replaceAll(LibrusKeys.MSG_ID_PATTERN, "$1");
-                        hrefs.add(href);
-                        msgIds.add(type.name().toLowerCase() + "_" + numericId);
-                        sentAts.add(parseDateTime(cells.get(4).getText().trim()));
-                    }
-                } catch (NoSuchElementException ignored) {}
-            }
-
-            int skipped = 0;
-            for (int i = 0; i < hrefs.size(); i++) {
-                String msgId = msgIds.get(i);
-                if (knownMessageIds.contains(msgId)) {
-                    skipped++;
-                    continue;
-                }
-                try {
-                    driver.get(hrefs.get(i));
-                    jitter();
-
-                    wait.until(ExpectedConditions.presenceOfElementLocated(
-                            By.cssSelector(LibrusKeys.SEL_MSG_DETAIL_CONTAINER)));
-
-                    String rawSender   = tableValue(driver, LibrusKeys.MSG_LABEL_SENDER);
-                    String sender      = rawSender.replaceAll("\\s*\\([^)]+\\)", "")
-                                                  .replaceAll("\\s*\\[[^]]*]", "").trim();
-                    java.util.regex.Matcher roleM = java.util.regex.Pattern
-                            .compile("\\[([^]]+)]").matcher(rawSender);
-                    String senderRole  = roleM.find() ? roleM.group(1).trim() : "";
-                    String subject = tableValue(driver, LibrusKeys.MSG_LABEL_SUBJECT);
-                    String content = textSafe(driver, LibrusKeys.SEL_MSG_DETAIL_CONTENT);
-
-                    messages.add(new ScrapedData.MessageRecord(msgId, type, MessageSource.LIBRUS, sender, senderRole, subject, content, sentAts.get(i)));
-                    jitter();
-                } catch (Exception e) {
-                    log.warn("Failed to scrape {} message id={}: {}", type, msgId, e.getMessage());
-                }
-            }
-            if (skipped > 0) log.info("Skipped {} already-stored {} messages", skipped, type);
-        } catch (TimeoutException e) {
-            log.warn("{} messages list not found at {} — page layout may have changed", type, url);
+        if (doc.selectFirst(LibrusKeys.SEL_MSG_TABLE) == null) {
+            log.warn("{} messages list not found — page layout may have changed", type);
+            return messages;
         }
+
+        List<String> hrefs   = new ArrayList<>();
+        List<String> msgIds  = new ArrayList<>();
+        List<LocalDateTime> sentAts = new ArrayList<>();
+
+        for (Element row : doc.select(LibrusKeys.SEL_MSG_ROWS)) {
+            Elements cells = row.select("td");
+            if (cells.size() < 5) continue;
+
+            Element link = row.selectFirst(LibrusKeys.SEL_MSG_LINK);
+            if (link == null) continue;
+            String href = link.attr("abs:href");
+            if (!href.contains(LibrusKeys.MSG_HREF_FRAGMENT)) continue;
+
+            String numericId = href.replaceAll(LibrusKeys.MSG_ID_PATTERN, "$1");
+            hrefs.add(href);
+            msgIds.add(type.name().toLowerCase() + "_" + numericId);
+            sentAts.add(parseDateTime(cells.get(4).text().trim()));
+        }
+
+        int skipped = 0;
+        for (int i = 0; i < hrefs.size(); i++) {
+            String msgId = msgIds.get(i);
+            if (knownMessageIds.contains(msgId)) {
+                skipped++;
+                continue;
+            }
+            try {
+                Document detail = session.getPage(hrefs.get(i));
+                jitter();
+
+                String rawSender  = tableValue(detail, LibrusKeys.MSG_LABEL_SENDER);
+                String sender     = rawSender.replaceAll("\\s*\\([^)]+\\)", "")
+                                             .replaceAll("\\s*\\[[^]]*]", "").trim();
+                java.util.regex.Matcher roleM = java.util.regex.Pattern
+                        .compile("\\[([^]]+)]").matcher(rawSender);
+                String senderRole = roleM.find() ? roleM.group(1).trim() : "";
+                String subject    = tableValue(detail, LibrusKeys.MSG_LABEL_SUBJECT);
+
+                Element contentEl = detail.selectFirst(LibrusKeys.SEL_MSG_DETAIL_CONTENT);
+                String content    = contentEl != null ? contentEl.text().trim() : "";
+
+                messages.add(new ScrapedData.MessageRecord(
+                        msgId, type, MessageSource.LIBRUS,
+                        sender, senderRole, subject, content, sentAts.get(i)));
+            } catch (Exception e) {
+                log.warn("Failed to scrape {} message id={}: {}", type, msgId, e.getMessage());
+            }
+        }
+        if (skipped > 0) log.info("Skipped {} already-stored {} messages", skipped, type);
 
         log.info("Scraped {} {} messages", messages.size(), type);
         return messages;
@@ -348,104 +238,96 @@ public class LibrusScraperService {
 
     // ── Attendance ───────────────────────────────────────────────────────────
 
-    private List<ScrapedData.AttendanceRecord> scrapeAttendance(WebDriver driver, WebDriverWait wait) {
+    private List<ScrapedData.AttendanceRecord> scrapeAttendance(LibrusSession session) throws IOException {
         log.info("Scraping attendance");
         List<ScrapedData.AttendanceRecord> records = new ArrayList<>();
 
-        driver.get(urlAttendance);
-        jitter();
+        Document doc = session.getPage(urlAttendance);
 
-        try {
-            wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(LibrusKeys.SEL_ATTENDANCE_TABLE)));
+        if (doc.selectFirst(LibrusKeys.SEL_ATTENDANCE_TABLE) == null) {
+            log.warn("Attendance table not found — page layout may have changed");
+            return records;
+        }
 
-            List<WebElement> rows = driver.findElements(By.cssSelector(LibrusKeys.SEL_ATTENDANCE_ROWS));
+        for (Element row : doc.select(LibrusKeys.SEL_ATTENDANCE_ROWS)) {
+            try {
+                Elements cells = row.select("td");
+                if (cells.size() < 4) continue;
 
-            for (WebElement row : rows) {
-                try {
-                    List<WebElement> cells = row.findElements(By.tagName("td"));
-                    if (cells.size() < 4) continue;
+                String dateStr      = cells.get(0).text().trim();
+                String lessonNumStr = cells.get(1).text().trim();
+                String subject      = cells.get(2).text().trim();
+                String statusRaw    = cells.get(3).text().trim();
 
-                    String dateStr      = cells.get(0).getText().trim();
-                    String lessonNumStr = cells.get(1).getText().trim();
-                    String subject      = cells.get(2).getText().trim();
-                    String statusRaw    = cells.get(3).getText().trim();
+                if (dateStr.isBlank() || lessonNumStr.isBlank()) continue;
 
-                    if (dateStr.isBlank() || lessonNumStr.isBlank()) continue;
-
-                    records.add(new ScrapedData.AttendanceRecord(
-                            parseDate(dateStr),
-                            parseInt(lessonNumStr, 0),
-                            parseAttendanceStatus(statusRaw),
-                            subject
-                    ));
-                } catch (Exception e) {
-                    log.warn("Could not parse attendance row: {}", e.getMessage());
-                }
+                records.add(new ScrapedData.AttendanceRecord(
+                        parseDate(dateStr),
+                        parseInt(lessonNumStr, 0),
+                        parseAttendanceStatus(statusRaw),
+                        subject
+                ));
+            } catch (Exception e) {
+                log.warn("Could not parse attendance row: {}", e.getMessage());
             }
-        } catch (TimeoutException e) {
-            log.warn("Attendance table not found at {} — page layout may have changed", urlAttendance);
         }
 
         log.info("Scraped {} attendance records", records.size());
         return records;
     }
 
-    // ── Announcements ─────────────────────────────────────────────────────────
+    // ── Announcements ────────────────────────────────────────────────────────
 
-    private List<ScrapedData.AnnouncementRecord> scrapeAnnouncements(WebDriver driver, WebDriverWait wait,
-                                                                       Set<String> knownIds) {
+    private List<ScrapedData.AnnouncementRecord> scrapeAnnouncements(LibrusSession session,
+                                                                       Set<String> knownIds) throws IOException {
         log.info("Scraping announcements");
         List<ScrapedData.AnnouncementRecord> records = new ArrayList<>();
 
-        driver.get(urlAnnouncements);
-        jitter();
+        Document doc = session.getPage(urlAnnouncements);
 
-        // Each announcement is a self-contained table on the list page — no navigation to detail pages.
-        // Structure: <thead><tr><td colspan="2">Title</td></tr></thead>
-        //            <tbody><tr><th>Dodał</th><td>Author</td></tr>
-        //                   <tr><th>Data publikacji</th><td>date</td></tr>
-        //                   <tr><th>Treść</th><td>content</td></tr></tbody>
-        try {
-            wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(LibrusKeys.SEL_ANN_TABLE)));
-
-            List<WebElement> tables = driver.findElements(By.cssSelector(LibrusKeys.SEL_ANN_TABLE));
-            log.info("Announcements page — found {} table(s)", tables.size());
-
-            int skipped = 0;
-            for (WebElement table : tables) {
-                try {
-                    String title = table.findElement(By.cssSelector("thead td")).getText().trim();
-                    if (title.isBlank()) continue;
-
-                    String author     = "";
-                    String authorRole = "";
-                    String dateStr    = "";
-                    String content    = "";
-
-                    for (WebElement row : table.findElements(By.cssSelector("tbody tr"))) {
-                        List<WebElement> ths = row.findElements(By.tagName("th"));
-                        List<WebElement> tds = row.findElements(By.tagName("td"));
-                        if (ths.isEmpty() || tds.isEmpty()) continue;
-                        String label = ths.get(0).getText().trim();
-                        if      (LibrusKeys.ANN_LABEL_AUTHOR.equals(label))  author     = tds.get(0).getText().trim();
-                        else if (LibrusKeys.ANN_LABEL_ROLE.equals(label))    authorRole = tds.get(0).getText().trim();
-                        else if (LibrusKeys.ANN_LABEL_DATE.equals(label))    dateStr    = tds.get(0).getText().trim();
-                        else if (LibrusKeys.ANN_LABEL_CONTENT.equals(label)) content    = tds.get(0).getText().trim();
-                    }
-
-                    String annId = generateAnnId(title, dateStr, author);
-                    if (knownIds.contains(annId)) { skipped++; continue; }
-
-                    records.add(new ScrapedData.AnnouncementRecord(
-                            annId, "LIBRUS", title, content, author, authorRole, parseDate(dateStr)));
-                } catch (Exception e) {
-                    log.warn("Failed to parse announcement table: {}", e.getMessage());
-                }
-            }
-            if (skipped > 0) log.info("Skipped {} already-stored announcement(s)", skipped);
-        } catch (TimeoutException e) {
-            log.warn("Announcements table not found at {} — page layout may have changed", urlAnnouncements);
+        if (doc.selectFirst(LibrusKeys.SEL_ANN_TABLE) == null) {
+            log.warn("Announcements table not found — page layout may have changed");
+            return records;
         }
+
+        Elements tables = doc.select(LibrusKeys.SEL_ANN_TABLE);
+        log.info("Announcements page — found {} table(s)", tables.size());
+
+        int skipped = 0;
+        for (Element table : tables) {
+            try {
+                Element theadTd = table.selectFirst("thead td");
+                if (theadTd == null) continue;
+                String title = theadTd.text().trim();
+                if (title.isBlank()) continue;
+
+                String author     = "";
+                String authorRole = "";
+                String dateStr    = "";
+                String content    = "";
+
+                for (Element row : table.select("tbody tr")) {
+                    Elements ths = row.select("th");
+                    Elements tds = row.select("td");
+                    if (ths.isEmpty() || tds.isEmpty()) continue;
+                    String label = ths.first().text().trim();
+                    String value = tds.first().text().trim();
+                    if      (LibrusKeys.ANN_LABEL_AUTHOR.equals(label))  author     = value;
+                    else if (LibrusKeys.ANN_LABEL_ROLE.equals(label))    authorRole = value;
+                    else if (LibrusKeys.ANN_LABEL_DATE.equals(label))    dateStr    = value;
+                    else if (LibrusKeys.ANN_LABEL_CONTENT.equals(label)) content    = value;
+                }
+
+                String annId = generateAnnId(title, dateStr, author);
+                if (knownIds.contains(annId)) { skipped++; continue; }
+
+                records.add(new ScrapedData.AnnouncementRecord(
+                        annId, "LIBRUS", title, content, author, authorRole, parseDate(dateStr)));
+            } catch (Exception e) {
+                log.warn("Failed to parse announcement table: {}", e.getMessage());
+            }
+        }
+        if (skipped > 0) log.info("Skipped {} already-stored announcement(s)", skipped);
 
         log.info("Scraped {} announcement(s)", records.size());
         return records;
@@ -453,51 +335,21 @@ public class LibrusScraperService {
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
-    private void jsSetValue(WebDriver driver, WebElement element, String value) {
-        ((JavascriptExecutor) driver).executeScript(
-            "arguments[0].value = arguments[1];" +
-            "arguments[0].dispatchEvent(new Event('input', { bubbles: true }));" +
-            "arguments[0].dispatchEvent(new Event('change', { bubbles: true }));",
-            element, value
-        );
-    }
-
-    private void humanType(WebElement element, String text) {
-        element.click();
-        element.clear();
-        for (char ch : text.toCharArray()) {
-            element.sendKeys(String.valueOf(ch));
-            sleep(ThreadLocalRandom.current().nextLong(humanTypeDelayMinMs, humanTypeDelayMaxMs + 1));
+    private String tableValue(Document doc, String label) {
+        for (Element td : doc.select("td")) {
+            if (label.equals(td.text().trim())) {
+                Element sibling = td.nextElementSibling();
+                return sibling != null ? sibling.text().trim() : "";
+            }
         }
+        return "";
     }
 
     private void jitter() {
-        sleep(ThreadLocalRandom.current().nextLong(pageJitterMinMs, pageJitterMaxMs + 1));
-    }
-
-    private void sleep(long millis) {
         try {
-            Thread.sleep(millis);
+            Thread.sleep(ThreadLocalRandom.current().nextLong(pageJitterMinMs, pageJitterMaxMs + 1));
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-        }
-    }
-
-    private String tableValue(WebDriver driver, String label) {
-        try {
-            return driver.findElement(
-                    By.xpath("//td[normalize-space()='" + label + "']/following-sibling::td[1]")
-            ).getText().trim();
-        } catch (NoSuchElementException e) {
-            return "";
-        }
-    }
-
-    private String textSafe(WebDriver driver, String cssSelector) {
-        try {
-            return driver.findElement(By.cssSelector(cssSelector)).getText().trim();
-        } catch (NoSuchElementException e) {
-            return "";
         }
     }
 
