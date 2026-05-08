@@ -68,15 +68,11 @@ services:
     ports:
       - "8081:8081"
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/ecr_harvester
-      SPRING_DATASOURCE_USERNAME: postgres
-      SPRING_DATASOURCE_PASSWORD: postgres
-      SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: 3
-      JAVA_TOOL_OPTIONS: "-Xms32m -Xmx120m -XX:+UseG1GC -XX:+UseContainerSupport"
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ecr_harvester
     deploy:
       resources:
         limits:
-          memory: 180M
+          memory: 64M
 
   ecr-frontend:
     image: ghcr.io/dziesio/ecr-frontend:latest

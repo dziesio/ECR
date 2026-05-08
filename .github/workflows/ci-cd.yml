@@ -24,10 +24,6 @@ jobs:
         run: mvn test -q
         working-directory: ecr-harvester
 
-      - name: Test ecr-api
-        run: mvn test -q
-        working-directory: ecr-api
-
       - name: Test ecr-frontend
         run: mvn test -q
         working-directory: ecr-frontend
@@ -67,7 +63,7 @@ jobs:
       - name: Build and push ecr-api
         uses: docker/build-push-action@v5
         with:
-          context: ./ecr-api
+          context: ./ecr-api-python
           push: true
           tags: ghcr.io/${{ github.repository_owner }}/ecr-api:latest
           cache-from: type=gha
