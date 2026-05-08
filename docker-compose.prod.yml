@@ -13,7 +13,7 @@ services:
       postgres
         -c shared_buffers=32MB
         -c effective_cache_size=64MB
-        -c max_connections=20
+        -c max_connections=40
         -c work_mem=2MB
     environment:
       POSTGRES_DB: ecr_harvester
@@ -42,6 +42,7 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/ecr_harvester
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: postgres
+      SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: 3
       LIBRUS_USERNAME: ${LIBRUS_USERNAME}
       LIBRUS_PASSWORD: ${LIBRUS_PASSWORD}
       LIBRUS_FULL_NAME: ${LIBRUS_FULL_NAME:-Student}
@@ -70,6 +71,7 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/ecr_harvester
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: postgres
+      SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: 3
       JAVA_TOOL_OPTIONS: "-Xms32m -Xmx120m -XX:+UseG1GC -XX:+UseContainerSupport"
     deploy:
       resources:
@@ -91,6 +93,7 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/ecr_harvester
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: postgres
+      SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: 3
       ECR_API_BASE_URL: http://ecr-api:8081
       JAVA_TOOL_OPTIONS: "-Xms32m -Xmx120m -XX:+UseG1GC -XX:+UseContainerSupport"
     deploy:
@@ -111,6 +114,7 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/ecr_harvester
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: postgres
+      SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: 3
       ECR_API_BASE_URL: http://ecr-api:8081
       BARK_DEVICE_KEY: ${BARK_DEVICE_KEY}
       NOTIFIER_POLL_INTERVAL_MS: ${NOTIFIER_POLL_INTERVAL_MS:-300000}
