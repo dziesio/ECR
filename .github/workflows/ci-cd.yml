@@ -24,10 +24,6 @@ jobs:
         run: mvn test -q
         working-directory: ecr-harvester
 
-      - name: Test ecr-frontend
-        run: mvn test -q
-        working-directory: ecr-frontend
-
       - name: Test ecr-notifier
         run: mvn test -q
         working-directory: ecr-notifier
@@ -72,7 +68,7 @@ jobs:
       - name: Build and push ecr-frontend
         uses: docker/build-push-action@v5
         with:
-          context: ./ecr-frontend
+          context: ./ecr-frontend-python
           push: true
           tags: ghcr.io/${{ github.repository_owner }}/ecr-frontend:latest
           cache-from: type=gha

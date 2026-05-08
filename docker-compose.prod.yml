@@ -86,16 +86,13 @@ services:
     ports:
       - "40445:8082"
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/ecr_harvester
-      SPRING_DATASOURCE_USERNAME: postgres
-      SPRING_DATASOURCE_PASSWORD: postgres
-      SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: 3
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ecr_harvester
       ECR_API_BASE_URL: http://ecr-api:8081
-      JAVA_TOOL_OPTIONS: "-Xms32m -Xmx120m -XX:+UseG1GC -XX:+UseContainerSupport"
+      SECRET_KEY: ${FRONTEND_SECRET_KEY:-libehub-change-me}
     deploy:
       resources:
         limits:
-          memory: 180M
+          memory: 80M
 
   ecr-notifier:
     image: ghcr.io/dziesio/ecr-notifier:latest
