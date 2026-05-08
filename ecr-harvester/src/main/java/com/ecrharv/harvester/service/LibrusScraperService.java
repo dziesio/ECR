@@ -11,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
+import org.jsoup.nodes.TextNode;
 import org.jsoup.select.Elements;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -61,6 +62,7 @@ public class LibrusScraperService {
     public ScrapedData.ScrapeResult scrapeAll(Set<String> knownMessageIds, Set<String> knownAnnouncementIds) {
         try (LibrusSession session = librusHttpClient.openSession()) {
             Document gradesDoc = session.getPage(urlGrades);
+            log.info("Grades page title: '{}'", gradesDoc.title());
 
             ScrapedData.StudentInfo studentInfo = scrapeStudentInfo(gradesDoc);
             List<ScrapedData.GradeRecord> grades = scrapeGrades(gradesDoc);
@@ -93,14 +95,39 @@ public class LibrusScraperService {
                 return null;
             }
             String text = p.text();
-            String fullName  = extractStudentField(text, "Uczeń:");
+            String rawName   = extractBetweenLabels(text, "Uczeń:", "Klasa:");
+            String fullName  = reverseNameOrder(rawName);
             String className = extractStudentField(text, "Klasa:");
-            log.info("Student info scraped — class: '{}'", className);
+            log.info("Student info scraped — name: '{}', class: '{}'", fullName, className);
             return new ScrapedData.StudentInfo(fullName, className);
         } catch (Exception e) {
             log.warn("Could not scrape student info: {}", e.getMessage());
             return null;
         }
+    }
+
+    /** Extracts text between two labels in a flat string (JSoup .text() collapses whitespace). */
+    private String extractBetweenLabels(String text, String startLabel, String endLabel) {
+        int start = text.indexOf(startLabel);
+        if (start < 0) return "";
+        String after = text.substring(start + startLabel.length()).strip();
+        int end = after.indexOf(endLabel);
+        return end >= 0 ? after.substring(0, end).strip() : after;
+    }
+
+    /** Librus stores names as "Lastname Firstname" — reverse to "Firstname Lastname". */
+    private String reverseNameOrder(String name) {
+        if (name == null || name.isBlank()) return name;
+        String[] parts = name.trim().split("\\s+");
+        if (parts.length < 2) return name.trim();
+        // Move first token (last name) to end
+        StringBuilder sb = new StringBuilder();
+        for (int i = 1; i < parts.length; i++) {
+            if (i > 1) sb.append(' ');
+            sb.append(parts[i]);
+        }
+        sb.append(' ').append(parts[0]);
+        return sb.toString();
     }
 
     private String extractStudentField(String text, String label) {
@@ -109,6 +136,11 @@ public class LibrusScraperService {
         String after = text.substring(idx + label.length());
         int newline = after.indexOf('\n');
         if (newline >= 0) after = after.substring(0, newline);
+        // Stop at next label (e.g. "Uczeń:" appearing after "Klasa:")
+        for (String next : List.of("Uczeń:", "Klasa:", "Rok szkolny:")) {
+            int pos = after.indexOf(next);
+            if (pos >= 0) after = after.substring(0, pos);
+        }
         return after.strip();
     }
 
@@ -221,7 +253,7 @@ public class LibrusScraperService {
                 String subject    = tableValue(detail, LibrusKeys.MSG_LABEL_SUBJECT);
 
                 Element contentEl = detail.selectFirst(LibrusKeys.SEL_MSG_DETAIL_CONTENT);
-                String content    = contentEl != null ? contentEl.text().trim() : "";
+                String content    = contentEl != null ? extractText(contentEl) : "";
 
                 messages.add(new ScrapedData.MessageRecord(
                         msgId, type, MessageSource.LIBRUS,
@@ -315,7 +347,7 @@ public class LibrusScraperService {
                     if      (LibrusKeys.ANN_LABEL_AUTHOR.equals(label))  author     = value;
                     else if (LibrusKeys.ANN_LABEL_ROLE.equals(label))    authorRole = value;
                     else if (LibrusKeys.ANN_LABEL_DATE.equals(label))    dateStr    = value;
-                    else if (LibrusKeys.ANN_LABEL_CONTENT.equals(label)) content    = value;
+                    else if (LibrusKeys.ANN_LABEL_CONTENT.equals(label)) content    = extractText(tds.first());
                 }
 
                 String annId = generateAnnId(title, dateStr, author);
@@ -334,6 +366,13 @@ public class LibrusScraperService {
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
+
+    /** Preserves line breaks from {@code <br>} tags that JSoup's {@code .text()} silently drops. */
+    private String extractText(Element el) {
+        Element clone = el.clone();
+        clone.select("br").forEach(br -> br.replaceWith(new TextNode("\n")));
+        return clone.wholeText().strip();
+    }
 
     private String tableValue(Document doc, String label) {
         for (Element td : doc.select("td")) {
