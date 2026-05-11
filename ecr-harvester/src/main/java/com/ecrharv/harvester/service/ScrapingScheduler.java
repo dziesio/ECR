@@ -8,8 +8,11 @@ import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.stereotype.Component;
 
+import java.time.DayOfWeek;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -29,28 +32,43 @@ public class ScrapingScheduler {
     @Value("${librus.full-name:Unknown Student}")
     private String fullName;
 
-    @Value("${scraper.interval-minutes:10}")
-    private int intervalMinutes;
+    @Value("${scraper.peak-interval-minutes:15}")
+    private int peakIntervalMinutes;
+
+    @Value("${scraper.offpeak-interval-minutes:60}")
+    private int offPeakIntervalMinutes;
 
     @Value("${scraper.jitter-minutes:3}")
     private int jitterMinutes;
 
+    private static final ZoneId WARSAW = ZoneId.of("Europe/Warsaw");
+
     @EventListener(ApplicationReadyEvent.class)
     public void start() {
-        log.info("ScrapingScheduler online — running initial scrape immediately, then every {} min ± {} min",
-                intervalMinutes, jitterMinutes);
+        log.info("ScrapingScheduler online — peak {}±{} min (Mon–Fri 06–17 Warsaw), off-peak {}±{} min",
+                peakIntervalMinutes, jitterMinutes, offPeakIntervalMinutes, jitterMinutes);
         taskScheduler.schedule(this::runAndReschedule, Instant.now());
     }
 
+    private boolean isPeakTime() {
+        ZonedDateTime now = ZonedDateTime.now(WARSAW);
+        DayOfWeek day = now.getDayOfWeek();
+        int hour = now.getHour();
+        return day != DayOfWeek.SATURDAY && day != DayOfWeek.SUNDAY && hour >= 6 && hour < 17;
+    }
+
     private void scheduleNext() {
+        boolean peak = isPeakTime();
+        int baseMinutes = peak ? peakIntervalMinutes : offPeakIntervalMinutes;
         long jitterSeconds = ThreadLocalRandom.current().nextLong(
                 -jitterMinutes * 60L,
                  jitterMinutes * 60L
         );
-        long delaySeconds = Math.max(60L, intervalMinutes * 60L + jitterSeconds);
+        long delaySeconds = Math.max(60L, baseMinutes * 60L + jitterSeconds);
 
         Instant fireAt = Instant.now().plus(Duration.ofSeconds(delaySeconds));
-        log.info("Next scrape in {} s ({} min)", delaySeconds, delaySeconds / 60);
+        log.info("Next scrape in {} s ({} min) [{}]", delaySeconds, delaySeconds / 60,
+                peak ? "peak" : "off-peak");
 
         taskScheduler.schedule(this::runAndReschedule, fireAt);
     }
