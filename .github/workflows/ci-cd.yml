@@ -24,10 +24,6 @@ jobs:
         run: mvn test -q
         working-directory: ecr-harvester
 
-      - name: Test ecr-notifier
-        run: mvn test -q
-        working-directory: ecr-notifier
-
   # ── Build Docker images and push to ghcr.io ────────────────────────────────
   build-and-push:
     needs: test
@@ -77,7 +73,7 @@ jobs:
       - name: Build and push ecr-notifier
         uses: docker/build-push-action@v5
         with:
-          context: ./ecr-notifier
+          context: ./ecr-notifier-python
           push: true
           tags: ghcr.io/${{ github.repository_owner }}/ecr-notifier:latest
           cache-from: type=gha

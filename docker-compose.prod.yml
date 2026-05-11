@@ -104,18 +104,14 @@ services:
       ecr-api:
         condition: service_started
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/ecr_harvester
-      SPRING_DATASOURCE_USERNAME: postgres
-      SPRING_DATASOURCE_PASSWORD: postgres
-      SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: 3
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ecr_harvester
       ECR_API_BASE_URL: http://ecr-api:8081
       BARK_DEVICE_KEY: ${BARK_DEVICE_KEY}
       NOTIFIER_POLL_INTERVAL_MS: ${NOTIFIER_POLL_INTERVAL_MS:-300000}
-      JAVA_TOOL_OPTIONS: "-Xms32m -Xmx96m -XX:+UseG1GC -XX:+UseContainerSupport"
     deploy:
       resources:
         limits:
-          memory: 150M
+          memory: 64M
 
 volumes:
   postgres_data:
