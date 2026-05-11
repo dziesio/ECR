@@ -3,12 +3,13 @@ name: CI/CD
 on:
   push:
     branches: [main]
+    tags: ['v*.*.*']
   pull_request:
     branches: [main]
 
 jobs:
 
-  # ── Run tests for all three services ───────────────────────────────────────
+  # ── Tests run on every push and PR ────────────────────────────────────────────
   test:
     runs-on: ubuntu-latest
     steps:
@@ -24,10 +25,10 @@ jobs:
         run: mvn test -q
         working-directory: ecr-harvester
 
-  # ── Build Docker images and push to ghcr.io ────────────────────────────────
+  # ── Build and push images — only on version tags ──────────────────────────────
   build-and-push:
     needs: test
-    if: github.ref == 'refs/heads/main'
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -48,7 +49,9 @@ jobs:
         with:
           context: ./ecr-harvester
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/ecr-harvester:latest
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/ecr-harvester:${{ github.ref_name }}
+            ghcr.io/${{ github.repository_owner }}/ecr-harvester:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -57,7 +60,9 @@ jobs:
         with:
           context: ./ecr-api-python
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/ecr-api:latest
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/ecr-api:${{ github.ref_name }}
+            ghcr.io/${{ github.repository_owner }}/ecr-api:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -66,7 +71,9 @@ jobs:
         with:
           context: ./ecr-frontend-python
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/ecr-frontend:latest
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/ecr-frontend:${{ github.ref_name }}
+            ghcr.io/${{ github.repository_owner }}/ecr-frontend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -75,14 +82,16 @@ jobs:
         with:
           context: ./ecr-notifier-python
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/ecr-notifier:latest
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/ecr-notifier:${{ github.ref_name }}
+            ghcr.io/${{ github.repository_owner }}/ecr-notifier:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # ── SSH into VPS and pull the new images ───────────────────────────────────
+  # ── Deploy to VPS — only on version tags ─────────────────────────────────────
   deploy:
     needs: build-and-push
-    if: github.ref == 'refs/heads/main'
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
       - name: Deploy to VPS
