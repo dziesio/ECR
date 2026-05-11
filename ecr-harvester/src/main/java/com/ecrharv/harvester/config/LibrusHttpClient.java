@@ -67,9 +67,19 @@ public class LibrusHttpClient {
                         .setResponseTimeout(Timeout.ofSeconds(60))
                         .build())
                 .setDefaultHeaders(List.of(
-                        new BasicHeader(HttpHeaders.USER_AGENT, USER_AGENT),
-                        new BasicHeader(HttpHeaders.REFERER,
-                                "https://portal.librus.pl/rodzina/synergia/loguj")))
+                        new BasicHeader(HttpHeaders.USER_AGENT,       USER_AGENT),
+                        new BasicHeader(HttpHeaders.ACCEPT,           "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8"),
+                        new BasicHeader(HttpHeaders.ACCEPT_LANGUAGE,  "pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7"),
+                        new BasicHeader(HttpHeaders.ACCEPT_ENCODING,  "gzip, deflate, br, zstd"),
+                        new BasicHeader("Sec-CH-UA",                  "\"Chromium\";v=\"147\", \"Google Chrome\";v=\"147\", \"Not=A?Brand\";v=\"99\""),
+                        new BasicHeader("Sec-CH-UA-Mobile",           "?0"),
+                        new BasicHeader("Sec-CH-UA-Platform",         "\"macOS\""),
+                        new BasicHeader("Sec-Fetch-Dest",             "document"),
+                        new BasicHeader("Sec-Fetch-Mode",             "navigate"),
+                        new BasicHeader("Sec-Fetch-Site",             "same-origin"),
+                        new BasicHeader("Sec-Fetch-User",             "?1"),
+                        new BasicHeader("Upgrade-Insecure-Requests",  "1"),
+                        new BasicHeader(HttpHeaders.REFERER,          "https://portal.librus.pl/rodzina/synergia/loguj")))
                 .build();
     }
 
