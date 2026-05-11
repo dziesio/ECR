@@ -37,8 +37,8 @@ public class LibrusHttpClient {
     private static final String DEFAULT_OAUTH_URL  = "https://api.librus.pl/OAuth/Authorization?client_id=46";
 
     private static final String USER_AGENT =
-            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 " +
-            "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " +
+            "(KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36";
 
     @Value("${librus.username}")
     private String username;
