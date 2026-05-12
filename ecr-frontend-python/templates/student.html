@@ -159,11 +159,13 @@
                                     {% elif msg.messageSource %}
                                     <span class="badge rounded-pill flex-shrink-0 fw-normal bg-secondary-subtle text-secondary border" style="font-size:.72rem;">{{ msg.messageSource }}</span>
                                     {% endif %}
-                                    <span class="fw-medium flex-grow-1">{{ msg.subject }}</span>
-                                    <span class="text-muted small text-nowrap flex-shrink-0">{{ msg.sender }}</span>
-                                    {% if msg.senderRole %}
-                                    <span class="badge bg-light text-secondary border flex-shrink-0 fw-normal text-nowrap" style="font-size:.7rem;">{{ msg.senderRole }}</span>
-                                    {% endif %}
+                                    <span class="fw-medium text-truncate flex-grow-1" style="min-width:0">{{ msg.subject }}</span>
+                                    <span class="d-flex align-items-center gap-1 flex-shrink-0">
+                                        <span class="text-muted small text-nowrap">{{ msg.sender }}</span>
+                                        {% if msg.senderRole %}
+                                        <span class="badge bg-light text-secondary border fw-normal text-nowrap" style="font-size:.7rem;">{{ msg.senderRole }}</span>
+                                        {% endif %}
+                                    </span>
                                 </button>
                             </h2>
                             <div id="inbox-{{ loop.index0 }}" class="accordion-collapse collapse">
@@ -202,11 +204,13 @@
                                     {% elif msg.messageSource %}
                                     <span class="badge rounded-pill flex-shrink-0 fw-normal bg-secondary-subtle text-secondary border" style="font-size:.72rem;">{{ msg.messageSource }}</span>
                                     {% endif %}
-                                    <span class="fw-medium flex-grow-1">{{ msg.subject }}</span>
-                                    <span class="text-muted small text-nowrap flex-shrink-0">{{ msg.sender }}</span>
-                                    {% if msg.senderRole %}
-                                    <span class="badge bg-light text-secondary border flex-shrink-0 fw-normal text-nowrap" style="font-size:.7rem;">{{ msg.senderRole }}</span>
-                                    {% endif %}
+                                    <span class="fw-medium text-truncate flex-grow-1" style="min-width:0">{{ msg.subject }}</span>
+                                    <span class="d-flex align-items-center gap-1 flex-shrink-0">
+                                        <span class="text-muted small text-nowrap">{{ msg.sender }}</span>
+                                        {% if msg.senderRole %}
+                                        <span class="badge bg-light text-secondary border fw-normal text-nowrap" style="font-size:.7rem;">{{ msg.senderRole }}</span>
+                                        {% endif %}
+                                    </span>
                                 </button>
                             </h2>
                             <div id="sent-{{ loop.index0 }}" class="accordion-collapse collapse">
