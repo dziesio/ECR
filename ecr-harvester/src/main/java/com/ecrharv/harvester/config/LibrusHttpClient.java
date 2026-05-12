@@ -3,17 +3,21 @@ package com.ecrharv.harvester.config;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.hc.client5.http.auth.AuthScope;
+import org.apache.hc.client5.http.auth.UsernamePasswordCredentials;
 import org.apache.hc.client5.http.classic.methods.HttpGet;
 import org.apache.hc.client5.http.classic.methods.HttpPost;
 import org.apache.hc.client5.http.config.RequestConfig;
 import org.apache.hc.client5.http.cookie.BasicCookieStore;
 import org.apache.hc.client5.http.entity.UrlEncodedFormEntity;
+import org.apache.hc.client5.http.impl.auth.BasicCredentialsProvider;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpResponse;
 import org.apache.hc.client5.http.impl.classic.HttpClients;
 import org.apache.hc.client5.http.protocol.HttpClientContext;
 import org.apache.hc.client5.http.protocol.RedirectLocations;
 import org.apache.hc.core5.http.HttpHeaders;
+import org.apache.hc.core5.http.HttpHost;
 import org.apache.hc.core5.http.ParseException;
 import org.apache.hc.core5.http.io.entity.EntityUtils;
 import org.apache.hc.core5.http.message.BasicHeader;
@@ -22,10 +26,13 @@ import org.apache.hc.core5.util.Timeout;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import jakarta.annotation.PostConstruct;
 import java.io.IOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.ThreadLocalRandom;
 
 @Slf4j
 @Component
@@ -46,6 +53,33 @@ public class LibrusHttpClient {
     @Value("${librus.password}")
     private String password;
 
+    @Value("${scraper.proxy.list:}")
+    private String proxyListRaw;
+
+    @Value("${scraper.proxy.user:}")
+    private String proxyUser;
+
+    @Value("${scraper.proxy.pass:}")
+    private String proxyPass;
+
+    private List<HttpHost> proxies = List.of();
+
+    @PostConstruct
+    void initProxies() {
+        if (proxyListRaw == null || proxyListRaw.isBlank()) return;
+        proxies = Arrays.stream(proxyListRaw.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .map(s -> { String[] p = s.split(":"); return new HttpHost(p[0], Integer.parseInt(p[1])); })
+                .toList();
+        log.info("Proxy rotation enabled — {} proxies loaded", proxies.size());
+    }
+
+    private HttpHost pickProxy() {
+        if (proxies.isEmpty()) return null;
+        return proxies.get(ThreadLocalRandom.current().nextInt(proxies.size()));
+    }
+
     public LibrusSession openSession() throws IOException {
         BasicCookieStore cookieStore = new BasicCookieStore();
         CloseableHttpClient client = buildClient(cookieStore);
@@ -60,7 +94,9 @@ public class LibrusHttpClient {
     }
 
     private CloseableHttpClient buildClient(BasicCookieStore cookieStore) {
-        return HttpClients.custom()
+        HttpHost proxy = pickProxy();
+
+        var builder = HttpClients.custom()
                 .setDefaultCookieStore(cookieStore)
                 .setDefaultRequestConfig(RequestConfig.custom()
                         .setConnectTimeout(Timeout.ofSeconds(30))
@@ -79,8 +115,17 @@ public class LibrusHttpClient {
                         new BasicHeader("Sec-Fetch-Site",             "same-origin"),
                         new BasicHeader("Sec-Fetch-User",             "?1"),
                         new BasicHeader("Upgrade-Insecure-Requests",  "1"),
-                        new BasicHeader(HttpHeaders.REFERER,          "https://portal.librus.pl/rodzina/synergia/loguj")))
-                .build();
+                        new BasicHeader(HttpHeaders.REFERER,          "https://portal.librus.pl/rodzina/synergia/loguj")));
+
+        if (proxy != null) {
+            var creds = new BasicCredentialsProvider();
+            creds.setCredentials(new AuthScope(proxy),
+                    new UsernamePasswordCredentials(proxyUser, proxyPass.toCharArray()));
+            builder.setProxy(proxy).setDefaultCredentialsProvider(creds);
+            log.info("Session using proxy {}:{}", proxy.getHostName(), proxy.getPort());
+        }
+
+        return builder.build();
     }
 
     private void login(CloseableHttpClient client) throws IOException {
