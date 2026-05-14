@@ -58,11 +58,11 @@ services:
       SCRAPER_PROXY_LIST: ${SCRAPER_PROXY_LIST:-}
       SCRAPER_PROXY_USER: ${SCRAPER_PROXY_USER:-}
       SCRAPER_PROXY_PASS: ${SCRAPER_PROXY_PASS:-}
-      JAVA_TOOL_OPTIONS: "-Xms64m -Xmx180m -XX:+UseG1GC -XX:+UseContainerSupport"
+      JAVA_TOOL_OPTIONS: "-Xms48m -Xmx160m -XX:MaxMetaspaceSize=80m -XX:ReservedCodeCacheSize=32m -XX:+UseG1GC -XX:+UseContainerSupport"
     deploy:
       resources:
         limits:
-          memory: 256M
+          memory: 320M
 
   ecr-api:
     image: ghcr.io/dziesio/ecr-api:latest

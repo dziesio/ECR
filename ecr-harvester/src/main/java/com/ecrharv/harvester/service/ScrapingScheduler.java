@@ -97,7 +97,7 @@ public class ScrapingScheduler {
             persistenceService.saveAnnouncements(student, result.announcements());
 
             log.info("Scraping session completed");
-        } catch (Exception e) {
+        } catch (Throwable e) {
             log.error("Scraping session failed: {}", e.getMessage(), e);
         } finally {
             scheduleNext();
