@@ -15,7 +15,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 
 DATABASE_URL      = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@postgres:5432/ecr_harvester")
 ECR_API_BASE_URL  = os.getenv("ECR_API_BASE_URL", "http://ecr-api:8081")
-BARK_DEVICE_KEY   = os.getenv("BARK_DEVICE_KEY", "aTq6NHiBY8yVehSvr3GTHi")
+BARK_DEVICE_KEYS  = [k.strip() for k in os.getenv("BARK_DEVICE_KEY", "").split(",") if k.strip()]
 POLL_INTERVAL_S   = int(os.getenv("NOTIFIER_POLL_INTERVAL_MS", "300000")) / 1000
 
 _SOURCE_DISPLAY = {"BRITISH_COUNCIL": "British Council"}
@@ -42,14 +42,15 @@ async def _migrate(conn):
 
 
 async def _send_bark(title: str, body: str):
-    url = f"https://api.day.app/{BARK_DEVICE_KEY}/{quote(title)}/{quote(body)}"
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            r = await client.get(url)
-            if r.status_code != 200:
-                log.warning("Bark HTTP %s for: %s", r.status_code, title)
-    except Exception as exc:
-        log.warning("Bark failed: %s", exc)
+    async with httpx.AsyncClient(timeout=10) as client:
+        for key in BARK_DEVICE_KEYS:
+            url = f"https://api.day.app/{key}/{quote(title)}/{quote(body)}"
+            try:
+                r = await client.get(url)
+                if r.status_code != 200:
+                    log.warning("Bark HTTP %s for key …%s: %s", r.status_code, key[-6:], title)
+            except Exception as exc:
+                log.warning("Bark failed for key …%s: %s", key[-6:], exc)
 
 
 async def _poll_once():
