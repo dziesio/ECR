@@ -97,8 +97,17 @@ public class BritishCouncilHttpClient {
         }
         log.info("BC login form action='{}' method='{}'", form.attr("action"), form.attr("method"));
 
+        // If form action is empty, default to the current page (standard HTML behavior)
         String action = form.absUrl("action");
-        if (action.isBlank()) action = BASE_URL + form.attr("action");
+        if (action.isBlank()) action = LOGIN_URL;
+
+        // loginPath hidden field overrides the form action with the real POST endpoint
+        Element loginPathEl = form.selectFirst("input[name=loginPath]");
+        if (loginPathEl != null && !loginPathEl.val().isBlank()) {
+            String lp = loginPathEl.val();
+            action = lp.startsWith("http") ? lp : BASE_URL + lp;
+        }
+        log.info("BC resolved login POST action: {}", action);
 
         List<BasicNameValuePair> params = new ArrayList<>();
         for (Element hidden : form.select("input[type=hidden]")) {
