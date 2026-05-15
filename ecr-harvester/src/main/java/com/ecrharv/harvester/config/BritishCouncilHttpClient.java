@@ -128,7 +128,9 @@ public class BritishCouncilHttpClient {
         HttpGet get = new HttpGet(ENROLLMENTS_URL);
         get.addHeader(HttpHeaders.ACCEPT, "application/json");
 
-        JsonNode root = objectMapper.readTree(body(client.execute(get)));
+        String raw = body(client.execute(get));
+        log.info("BC enrollments raw (first 500): {}", raw.substring(0, Math.min(500, raw.length())));
+        JsonNode root = objectMapper.readTree(raw);
         JsonNode items = root.path("Items");
         if (items.isMissingNode()) items = root.path("items");
 
