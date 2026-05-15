@@ -91,7 +91,6 @@ services:
         condition: service_started
     ports:
       - "40445:8082"
-      - ":::40445:8082"
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ecr_harvester
       ECR_API_BASE_URL: http://ecr-api:8081
