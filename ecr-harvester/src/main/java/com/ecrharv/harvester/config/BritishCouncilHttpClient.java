@@ -84,6 +84,15 @@ public class BritishCouncilHttpClient {
         String loginHtml = body(client.execute(getLogin));
 
         Document doc = Jsoup.parse(loginHtml, LOGIN_URL);
+        log.info("BC login page title: '{}'", doc.title());
+        log.info("BC login page forms: {}", doc.select("form").stream()
+                .map(f -> "action=" + f.attr("action") + " method=" + f.attr("method"))
+                .toList());
+        log.info("BC login page inputs: {}", doc.select("input").stream()
+                .map(i -> "name=" + i.attr("name") + " type=" + i.attr("type"))
+                .toList());
+        log.info("BC login page head: {}", loginHtml.substring(0, Math.min(800, loginHtml.length())));
+
         Element form = doc.selectFirst("form[method=post], form[method=POST]");
         if (form == null) {
             throw new IOException("BC login page contains no POST form — page may use SSO redirect");
