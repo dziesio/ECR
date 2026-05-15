@@ -272,15 +272,20 @@
                         <button class="accordion-button collapsed py-2 px-3 d-flex gap-2 align-items-center flex-wrap"
                                 type="button" data-bs-toggle="collapse" data-bs-target="#ann-{{ loop.index0 }}">
                             <span class="text-muted small text-nowrap flex-shrink-0">{{ ann.publishedAt }}</span>
-                            {% if ann.source == 'LIBRUS' %}<span class="badge rounded-pill flex-shrink-0 fw-normal src-librus">Librus</span>
-                            {% elif ann.source == 'BRITISH_COUNCIL' %}<span class="badge rounded-pill flex-shrink-0 fw-normal src-bc">British Council</span>
-                            {% elif ann.source %}<span class="badge rounded-pill flex-shrink-0 fw-normal bg-secondary text-white">{{ ann.source }}</span>
+                            {% if ann.source == 'LIBRUS' %}
+                            <span class="badge rounded-pill flex-shrink-0 fw-normal src-librus" style="font-size:.72rem;"><i class="bi bi-book-half me-1"></i>Librus</span>
+                            {% elif ann.source == 'BRITISH_COUNCIL' %}
+                            <span class="badge rounded-pill flex-shrink-0 fw-normal src-bc" style="font-size:.72rem;"><i class="bi bi-globe2 me-1"></i>British Council</span>
+                            {% elif ann.source %}
+                            <span class="badge rounded-pill flex-shrink-0 fw-normal bg-secondary-subtle text-secondary border" style="font-size:.72rem;">{{ ann.source }}</span>
                             {% endif %}
-                            <span class="fw-medium flex-grow-1">{{ ann.title }}</span>
-                            <span class="text-muted small text-nowrap flex-shrink-0">{{ ann.author }}</span>
-                            {% if ann.authorRole %}
-                            <span class="badge rounded-pill bg-light text-secondary fw-normal flex-shrink-0">{{ ann.authorRole }}</span>
-                            {% endif %}
+                            <span class="fw-medium text-truncate flex-grow-1" style="min-width:0">{{ ann.title }}</span>
+                            <span class="d-flex align-items-center gap-1 flex-shrink-0">
+                                <span class="text-muted small text-nowrap">{{ ann.author }}</span>
+                                {% if ann.authorRole %}
+                                <span class="badge bg-light text-secondary border fw-normal text-nowrap" style="font-size:.7rem;">{{ ann.authorRole }}</span>
+                                {% endif %}
+                            </span>
                         </button>
                     </h2>
                     <div id="ann-{{ loop.index0 }}" class="accordion-collapse collapse">
