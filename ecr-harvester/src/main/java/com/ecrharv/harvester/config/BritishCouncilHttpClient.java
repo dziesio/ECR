@@ -84,19 +84,18 @@ public class BritishCouncilHttpClient {
         String loginHtml = body(client.execute(getLogin));
 
         Document doc = Jsoup.parse(loginHtml, LOGIN_URL);
-        log.info("BC login page title: '{}'", doc.title());
-        log.info("BC login page forms: {}", doc.select("form").stream()
-                .map(f -> "action=" + f.attr("action") + " method=" + f.attr("method"))
-                .toList());
-        log.info("BC login page inputs: {}", doc.select("input").stream()
-                .map(i -> "name=" + i.attr("name") + " type=" + i.attr("type"))
-                .toList());
-        log.info("BC login page head: {}", loginHtml.substring(0, Math.min(800, loginHtml.length())));
-
-        Element form = doc.selectFirst("form[method=post], form[method=POST]");
+        // Find form by username field presence — D2L omits method="post" or varies case
+        Element form = doc.selectFirst("form:has(input[name=userName])");
+        if (form == null) form = doc.selectFirst("form:has(input[name=username])");
+        if (form == null) form = doc.selectFirst("form:has(input[type=password])");
         if (form == null) {
-            throw new IOException("BC login page contains no POST form — page may use SSO redirect");
+            log.error("BC login page title: '{}', forms: {}, head: {}",
+                    doc.title(),
+                    doc.select("form").stream().map(f -> f.attr("action") + "/" + f.attr("method")).toList(),
+                    loginHtml.substring(0, Math.min(500, loginHtml.length())));
+            throw new IOException("BC login page contains no recognisable login form");
         }
+        log.info("BC login form action='{}' method='{}'", form.attr("action"), form.attr("method"));
 
         String action = form.absUrl("action");
         if (action.isBlank()) action = BASE_URL + form.attr("action");
