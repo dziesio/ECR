@@ -7,6 +7,7 @@ import com.ecrharv.harvester.scraping.ScrapedData;
 import com.fasterxml.jackson.databind.JsonNode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.jsoup.Jsoup;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -58,33 +59,15 @@ public class BritishCouncilScraperService {
         }
 
         try (BritishCouncilHttpClient.BcSession session = bcHttpClient.openSession()) {
-            String orgId = session.findFirstCourseOrgId();
-            if (orgId == null) {
-                log.warn("No BC course found — skipping news scrape");
+            List<String> orgIds = session.findCourseOrgIds();
+            if (orgIds.isEmpty()) {
+                log.warn("No BC course/group found — skipping news scrape");
                 return ScrapedData.BcScrapeResult.empty();
             }
 
-            List<JsonNode> newsItems = session.fetchNewsItems(orgId);
             List<ScrapedData.MessageRecord> messages = new ArrayList<>();
-
-            for (JsonNode item : newsItems) {
-                String newsId = text(item, "NewsItemId", "Id", "id");
-                String title  = text(item, "Title", "Headline");
-                if (title.isBlank()) title = "(no title)";
-                String author  = extractAuthor(item);
-                String dateStr = text(item, "StartDate", "CreatedDate", "PublishDate");
-                String content = extractBody(item);
-
-                String msgId = "bc_news_" + newsId;
-                if (knownMessageIds.contains(msgId)) {
-                    log.debug("Skipping already-stored BC news: '{}'", title);
-                    continue;
-                }
-
-                messages.add(new ScrapedData.MessageRecord(
-                        msgId, MessageType.INBOX, MessageSource.BRITISH_COUNCIL,
-                        author, "", title, content, parseDateTime(dateStr)));
-                log.debug("Scraped BC news '{}' by '{}'", title, author);
+            for (String orgId : orgIds) {
+                processNewsItems(session.fetchNewsItems(orgId), knownMessageIds, messages, session);
             }
 
             log.info("Scraped {} new BC news item(s)", messages.size());
@@ -98,6 +81,79 @@ public class BritishCouncilScraperService {
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
+    private void processNewsItems(List<JsonNode> items, Set<String> knownMessageIds,
+                                  List<ScrapedData.MessageRecord> out,
+                                  BritishCouncilHttpClient.BcSession session) {
+        for (JsonNode item : items) {
+            JsonNode obj = item.path("object");
+
+            // Prefer article's own id (object.id) — stable across scrapes.
+            // Fall back to top-level activity id only when no object is present.
+            String rawId = obj.isMissingNode() ? "" : obj.path("id").asText("").trim();
+            if (rawId.isBlank()) rawId = text(item, "NewsItemId", "Id", "id");
+
+            // Extract last path segment from ActivityStreams URL (…/article/{uuid})
+            String newsId = rawId;
+            if (newsId.contains("/")) newsId = newsId.substring(newsId.lastIndexOf('/') + 1);
+            else if (newsId.contains(":")) newsId = newsId.substring(newsId.lastIndexOf(':') + 1);
+
+            String title = text(item, "Title", "Headline");
+            if (title.isBlank() && !obj.isMissingNode()) title = obj.path("name").asText("").trim();
+            String content = extractBody(item);
+            if (title.isBlank()) title = generateTitle(content);
+
+            String author  = extractAuthor(item, session);
+            String dateStr = text(item, "published", "StartDate", "CreatedDate", "PublishDate");
+            if (dateStr.isBlank() && !obj.isMissingNode())
+                dateStr = text(obj, "published", "StartDate", "updated");
+
+            String msgId = "bc_news_" + newsId;
+            if (knownMessageIds.contains(msgId)) continue;
+            out.add(new ScrapedData.MessageRecord(msgId, MessageType.INBOX, MessageSource.BRITISH_COUNCIL,
+                    author, "", title, content, parseDateTime(dateStr)));
+        }
+    }
+
+    private static final java.util.regex.Pattern GREETING =
+            java.util.regex.Pattern.compile(
+                    "^Dear [^,\\n]+,\\s*", java.util.regex.Pattern.CASE_INSENSITIVE);
+
+    // Derives a display title from HTML body content:
+    // 1. Heading element (h1/h2/h3)
+    // 2. Paragraph whose sole child is <strong> or <b>
+    // 3. Plain text after stripping "Dear X," greeting, clipped at 80 chars
+    private String generateTitle(String html) {
+        if (html == null || html.isBlank()) return "(no title)";
+        org.jsoup.nodes.Document doc = Jsoup.parse(html);
+
+        for (String sel : new String[]{"h1", "h2", "h3"}) {
+            org.jsoup.nodes.Element el = doc.selectFirst(sel);
+            if (el != null && !el.text().isBlank()) return capitalize(el.text().trim());
+        }
+        for (String sel : new String[]{"p > strong:only-child", "p > b:only-child"}) {
+            org.jsoup.nodes.Element el = doc.selectFirst(sel);
+            if (el != null && !el.text().isBlank()) return capitalize(el.text().trim());
+        }
+
+        String plain = doc.text().trim();
+        if (plain.isBlank()) return "(no title)";
+
+        // Strip leading "Dear Parents," / "Dear Students," — it's a greeting, not a title
+        java.util.regex.Matcher m = GREETING.matcher(plain);
+        if (m.find() && m.end() < plain.length()) plain = plain.substring(m.end()).trim();
+        if (plain.isBlank()) return "(no title)";
+
+        String title = plain.length() <= 80 ? plain
+                : plain.substring(0, plain.lastIndexOf(' ', 80) > 20
+                        ? plain.lastIndexOf(' ', 80) : 80).trim() + "…";
+        return capitalize(title);
+    }
+
+    private static String capitalize(String s) {
+        if (s == null || s.isBlank()) return s;
+        return Character.toUpperCase(s.charAt(0)) + s.substring(1);
+    }
+
     private String text(JsonNode node, String... keys) {
         for (String k : keys) {
             String v = node.path(k).asText("").trim();
@@ -106,15 +162,21 @@ public class BritishCouncilScraperService {
         return "";
     }
 
-    private String extractAuthor(JsonNode item) {
-        for (String key : new String[]{"CreatedBy", "Author", "User", "Instructor", "Creator"}) {
-            JsonNode nested = item.path(key);
-            if (!nested.isMissingNode() && nested.isObject()) {
-                String first = nested.path("FirstName").asText("").trim();
-                String last  = nested.path("LastName").asText("").trim();
+    private String extractAuthor(JsonNode item, BritishCouncilHttpClient.BcSession session) {
+        for (String key : new String[]{"actor", "CreatedBy", "Author", "User", "Instructor", "Creator"}) {
+            JsonNode node = item.path(key);
+            if (node.isMissingNode()) continue;
+            if (node.isObject()) {
+                String first = node.path("FirstName").asText("").trim();
+                String last  = node.path("LastName").asText("").trim();
                 if (!first.isBlank() || !last.isBlank()) return (first + " " + last).trim();
-                String display = nested.path("DisplayName").asText(nested.path("Name").asText("")).trim();
+                String display = node.path("DisplayName").asText(
+                        node.path("Name").asText(node.path("name").asText(""))).trim();
                 if (!display.isBlank()) return display;
+            } else if (node.isTextual() && session != null) {
+                // ActivityStreams actor is a URL — resolve to a name via the session
+                String resolved = session.resolveActorName(node.asText().trim());
+                if (resolved != null && !resolved.isBlank()) return resolved;
             }
         }
         String first = item.path("AuthorFirstName").asText("").trim();
@@ -129,6 +191,12 @@ public class BritishCouncilScraperService {
             String html  = body.path("Html").asText("").trim();
             String plain = body.path("Text").asText("").trim();
             return !html.isBlank() ? html : plain;
+        }
+        // Activity Streams 2.0: object.content
+        JsonNode obj = item.path("object");
+        if (!obj.isMissingNode() && obj.isObject()) {
+            String content = obj.path("content").asText("").trim();
+            if (!content.isBlank()) return content;
         }
         return item.path("Content").asText("").trim();
     }

@@ -43,8 +43,8 @@ public class DataPersistenceService {
     public Student findOrCreateStudent(String librusUsername, String fullName, String className) {
         return studentRepository.findByLibrusUsername(librusUsername)
                 .map(s -> {
-                    s.setFullName(fullName);
-                    s.setClassName(className);
+                    if (fullName  != null && !fullName.isBlank()) s.setFullName(fullName);
+                    if (className != null) s.setClassName(className);
                     return studentRepository.save(s);
                 })
                 .orElseGet(() -> {
