@@ -120,6 +120,7 @@ services:
       ECR_API_BASE_URL: http://ecr-api:8081
       BARK_DEVICE_KEY: ${BARK_DEVICE_KEY}
       BARK_ICON_URL: ${BARK_ICON_URL:-https://portal.librus.pl/favicon.ico}
+      BARK_BC_ICON_URL: ${BARK_BC_ICON_URL:-}
       NOTIFIER_POLL_INTERVAL_MS: ${NOTIFIER_POLL_INTERVAL_MS:-300000}
     deploy:
       resources:
