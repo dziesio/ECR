@@ -238,9 +238,15 @@ public class LibrusHttpClient {
 
         HttpPost post = new HttpPost(OAUTH_URL);
         post.setEntity(new UrlEncodedFormEntity(allParams, StandardCharsets.UTF_8));
-        post.addHeader(HttpHeaders.REFERER,  OAUTH_URL);
-        post.addHeader("X-Requested-With",   "XMLHttpRequest");
-        post.setHeader(HttpHeaders.ACCEPT,   "application/json, */*;q=0.5");
+        post.setHeader(HttpHeaders.ACCEPT,    "application/json, text/javascript, */*; q=0.01");
+        post.setHeader(HttpHeaders.REFERER,   OAUTH_URL);
+        post.setHeader("Origin",              API_BASE_URL);
+        post.setHeader("X-Requested-With",    "XMLHttpRequest");
+        post.setHeader("X-Baner",             "DBEDIFJDHMHHEJMFMHF_EKKMEHDJHIGII");
+        post.setHeader("Sec-Fetch-Dest",      "empty");
+        post.setHeader("Sec-Fetch-Mode",      "cors");
+        post.setHeader("Sec-Fetch-Site",      "same-origin");
+        post.removeHeaders("Sec-Fetch-User");
 
         try (CloseableHttpResponse resp = client.execute(post)) {
             String body;
