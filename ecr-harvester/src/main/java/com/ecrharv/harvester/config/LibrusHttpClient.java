@@ -32,6 +32,7 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
 
 @Slf4j
@@ -80,18 +81,40 @@ public class LibrusHttpClient {
         return proxies.get(ThreadLocalRandom.current().nextInt(proxies.size()));
     }
 
+    private static final int PROXY_RETRIES = 3;
+
     public LibrusSession openSession() throws IOException {
-        BasicCookieStore cookieStore = new BasicCookieStore();
-        CloseableHttpClient client = buildClient(cookieStore);
-        try {
-            login(client);
-            log.info("Librus session opened");
-            return new LibrusSession(client);
-        } catch (IOException e) {
-            client.close();
-            throw e;
+        IOException lastEx = null;
+        for (int attempt = 1; attempt <= PROXY_RETRIES; attempt++) {
+            BasicCookieStore cookieStore = new BasicCookieStore();
+            CloseableHttpClient client = buildClient(cookieStore);
+            try {
+                login(client);
+                log.info("Librus session opened (attempt {})", attempt);
+                return new LibrusSession(client);
+            } catch (IOException e) {
+                client.close();
+                lastEx = e;
+                boolean proxyError = e.getMessage() != null &&
+                        (e.getMessage().contains("504") || e.getMessage().contains("502") ||
+                         e.getMessage().contains("CONNECT") || e.getMessage().contains("proxy"));
+                if (proxyError && attempt < PROXY_RETRIES) {
+                    log.warn("Proxy error on attempt {}/{} — retrying with new connection: {}",
+                            attempt, PROXY_RETRIES, e.getMessage());
+                } else {
+                    throw e;
+                }
+            }
         }
+        throw lastEx;
     }
+
+    // Headers that must not appear in proxy CONNECT tunnel requests.
+    private static final Set<String> CONNECT_STRIP_HEADERS = Set.of(
+            "sec-ch-ua", "sec-ch-ua-mobile", "sec-ch-ua-platform",
+            "sec-fetch-dest", "sec-fetch-mode", "sec-fetch-site", "sec-fetch-user",
+            "upgrade-insecure-requests", "referer"
+    );
 
     private CloseableHttpClient buildClient(BasicCookieStore cookieStore) {
         HttpHost proxy = pickProxy();
@@ -115,7 +138,14 @@ public class LibrusHttpClient {
                         new BasicHeader("Sec-Fetch-Site",             "cross-site"),
                         new BasicHeader("Sec-Fetch-User",             "?1"),
                         new BasicHeader("Upgrade-Insecure-Requests",  "1"),
-                        new BasicHeader(HttpHeaders.REFERER,          "https://portal.librus.pl/rodzina/synergia/loguj")));
+                        new BasicHeader(HttpHeaders.REFERER,          "https://portal.librus.pl/rodzina/synergia/loguj")))
+                // Strip browser-only headers from CONNECT tunnel requests — proxies
+                // don't understand them and some reject or mis-route such requests.
+                .addRequestInterceptorFirst((request, entity, context) -> {
+                    if ("CONNECT".equalsIgnoreCase(request.getMethod())) {
+                        for (String h : CONNECT_STRIP_HEADERS) request.removeHeaders(h);
+                    }
+                });
 
         if (proxy != null) {
             var creds = new BasicCredentialsProvider();
