@@ -209,8 +209,21 @@ public class LibrusHttpClient {
                 List<URI> all = locations.getAll();
                 if (!all.isEmpty()) url = all.get(all.size() - 1).toString();
             }
+
+            // portalRodzina returned a challenge/block page instead of redirecting to the OAuth form.
+            // Fetch the OAuth page directly from api.librus.pl — different subdomain, less aggressively guarded.
             if (DEFAULT_OAUTH_URL.equals(url)) {
-                log.warn("No redirects from portalRodzina — using default OAuth URL");
+                log.warn("No redirects from portalRodzina — fetching OAuth login form directly from api.librus.pl");
+                HttpGet oauthGet = new HttpGet(DEFAULT_OAUTH_URL);
+                oauthGet.addHeader(HttpHeaders.REFERER, PORTAL_RODZINA_URL);
+                try (CloseableHttpResponse oauthResp = client.execute(oauthGet)) {
+                    log.info("Direct OAuth page response: HTTP {}", oauthResp.getCode());
+                    try {
+                        html = EntityUtils.toString(oauthResp.getEntity(), StandardCharsets.UTF_8);
+                    } catch (ParseException e) {
+                        html = "";
+                    }
+                }
             }
             return new String[]{url, html};
         }
