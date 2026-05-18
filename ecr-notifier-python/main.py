@@ -78,7 +78,6 @@ async def _poll_once():
                     sid = student["id"]
 
                     # ── Messages (INBOX only) ──────────────────────────────
-                    student_url = f"{FRONTEND_BASE_URL}/student/{sid}" if FRONTEND_BASE_URL else ""
                     for msg in (await http.get(f"/api/students/{sid}/messages")).json():
                         if msg.get("messageType") != "INBOX":
                             continue
@@ -92,7 +91,8 @@ async def _poll_once():
                         role   = msg.get("senderRole") or ""
                         title  = f"{src}: New message – {sender}" + (f" [{role}]" if role else "")
                         body   = msg.get("subject", "")
-                        await _send_bark(title, body, _icon_for_source(msg.get("messageSource")), student_url)
+                        msg_url = f"{FRONTEND_BASE_URL}/student/{sid}?tab=messages&open=msg-{msg['id']}" if FRONTEND_BASE_URL else ""
+                        await _send_bark(title, body, _icon_for_source(msg.get("messageSource")), msg_url)
                         await conn.execute(
                             "INSERT INTO notifications(entity_id,entity_type,title,body)"
                             " VALUES($1,'MESSAGE',$2,$3) ON CONFLICT DO NOTHING",
@@ -112,7 +112,8 @@ async def _poll_once():
                         role   = ann.get("authorRole") or ""
                         title  = f"{src}: Announcement – {author}" + (f" [{role}]" if role else "")
                         body   = ann.get("title", "")
-                        await _send_bark(title, body, _icon_for_source(ann.get("source")), student_url)
+                        ann_url = f"{FRONTEND_BASE_URL}/student/{sid}?tab=announcements&open=ann-{ann['id']}" if FRONTEND_BASE_URL else ""
+                        await _send_bark(title, body, _icon_for_source(ann.get("source")), ann_url)
                         await conn.execute(
                             "INSERT INTO notifications(entity_id,entity_type,title,body)"
                             " VALUES($1,'ANNOUNCEMENT',$2,$3) ON CONFLICT DO NOTHING",

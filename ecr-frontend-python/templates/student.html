@@ -150,7 +150,7 @@
                              data-sender="{{ msg.sender or '' }}" data-source="{{ msg.messageSource or '' }}">
                             <h2 class="accordion-header">
                                 <button class="accordion-button collapsed py-2 px-3 d-flex gap-2 align-items-center flex-wrap"
-                                        type="button" data-bs-toggle="collapse" data-bs-target="#inbox-{{ loop.index0 }}">
+                                        type="button" data-bs-toggle="collapse" data-bs-target="#msg-{{ msg.id }}">
                                     <span class="text-muted small text-nowrap flex-shrink-0">{{ msg.sentAt | dt }}</span>
                                     {% if msg.messageSource == 'LIBRUS' %}
                                     <span class="badge rounded-pill flex-shrink-0 fw-normal src-librus" style="font-size:.72rem;"><i class="bi bi-book-half me-1"></i>Librus</span>
@@ -168,7 +168,7 @@
                                     </span>
                                 </button>
                             </h2>
-                            <div id="inbox-{{ loop.index0 }}" class="accordion-collapse collapse">
+                            <div id="msg-{{ msg.id }}" class="accordion-collapse collapse">
                                 {% if msg.messageSource == 'BRITISH_COUNCIL' %}
                                 <div class="accordion-body pt-2 msg-html-content">{{ msg.content | safe }}</div>
                                 {% else %}
@@ -270,7 +270,7 @@
                 <div class="accordion-item">
                     <h2 class="accordion-header">
                         <button class="accordion-button collapsed py-2 px-3 d-flex gap-2 align-items-center flex-wrap"
-                                type="button" data-bs-toggle="collapse" data-bs-target="#ann-{{ loop.index0 }}">
+                                type="button" data-bs-toggle="collapse" data-bs-target="#ann-{{ ann.id }}">
                             <span class="text-muted small text-nowrap flex-shrink-0">{{ ann.publishedAt }}</span>
                             {% if ann.source == 'LIBRUS' %}
                             <span class="badge rounded-pill flex-shrink-0 fw-normal src-librus" style="font-size:.72rem;"><i class="bi bi-book-half me-1"></i>Librus</span>
@@ -288,7 +288,7 @@
                             </span>
                         </button>
                     </h2>
-                    <div id="ann-{{ loop.index0 }}" class="accordion-collapse collapse">
+                    <div id="ann-{{ ann.id }}" class="accordion-collapse collapse">
                         <div class="accordion-body pt-2" style="white-space: pre-wrap; font-size: .9rem; color: #343a40;">{{ ann.content | clean }}</div>
                     </div>
                 </div>
@@ -321,6 +321,21 @@ function applyMsgFilters(pane) {
 document.querySelectorAll('.msg-filter, .msg-source-filter').forEach(el => {
     el.addEventListener('input', function () { applyMsgFilters(this.closest('.tab-pane')); });
 });
+(function () {
+    const p = new URLSearchParams(location.search);
+    const tab = p.get('tab'), open = p.get('open');
+    if (tab) {
+        const btn = document.querySelector(`[data-bs-target="#${tab}"]`);
+        if (btn) bootstrap.Tab.getOrCreateInstance(btn).show();
+    }
+    const activate = () => {
+        const el = document.getElementById(open);
+        if (!el) return;
+        bootstrap.Collapse.getOrCreateInstance(el).show();
+        el.closest('.accordion-item')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    };
+    if (open) tab ? setTimeout(activate, 200) : activate();
+})();
 </script>
 </body>
 </html>
