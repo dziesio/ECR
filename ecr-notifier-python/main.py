@@ -16,6 +16,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 DATABASE_URL      = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@postgres:5432/ecr_harvester")
 ECR_API_BASE_URL  = os.getenv("ECR_API_BASE_URL", "http://ecr-api:8081")
 BARK_DEVICE_KEYS  = [k.strip() for k in os.getenv("BARK_DEVICE_KEY", "").split(",") if k.strip()]
+BARK_ICON_URL     = os.getenv("BARK_ICON_URL", "https://portal.librus.pl/favicon.ico")
 POLL_INTERVAL_S   = int(os.getenv("NOTIFIER_POLL_INTERVAL_MS", "300000")) / 1000
 
 _SOURCE_DISPLAY = {"BRITISH_COUNCIL": "British Council"}
@@ -45,6 +46,8 @@ async def _send_bark(title: str, body: str):
     async with httpx.AsyncClient(timeout=10) as client:
         for key in BARK_DEVICE_KEYS:
             url = f"https://api.day.app/{key}/{quote(title)}/{quote(body)}"
+            if BARK_ICON_URL:
+                url += f"?icon={quote(BARK_ICON_URL, safe=':/')}"
             try:
                 r = await client.get(url)
                 if r.status_code != 200:

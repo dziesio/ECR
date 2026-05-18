@@ -119,6 +119,7 @@ services:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ecr_harvester
       ECR_API_BASE_URL: http://ecr-api:8081
       BARK_DEVICE_KEY: ${BARK_DEVICE_KEY}
+      BARK_ICON_URL: ${BARK_ICON_URL:-https://portal.librus.pl/favicon.ico}
       NOTIFIER_POLL_INTERVAL_MS: ${NOTIFIER_POLL_INTERVAL_MS:-300000}
     deploy:
       resources:
