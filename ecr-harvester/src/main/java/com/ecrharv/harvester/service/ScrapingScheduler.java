@@ -59,7 +59,7 @@ public class ScrapingScheduler {
         log.info("BC schedule — Saturday 08–14: {} min, other: {} min",
                 bcPeakIntervalMinutes, bcOffpeakIntervalMinutes);
         taskScheduler.schedule(this::runAndReschedule,   Instant.now());
-        taskScheduler.schedule(this::runBcAndReschedule, Instant.now());
+        taskScheduler.schedule(this::runBcAndReschedule, Instant.now().plusSeconds(30));
     }
 
     // ── Librus schedule ───────────────────────────────────────────────────────

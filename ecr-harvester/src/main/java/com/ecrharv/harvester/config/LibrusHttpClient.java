@@ -112,7 +112,7 @@ public class LibrusHttpClient {
                         new BasicHeader("Sec-CH-UA-Platform",         "\"macOS\""),
                         new BasicHeader("Sec-Fetch-Dest",             "document"),
                         new BasicHeader("Sec-Fetch-Mode",             "navigate"),
-                        new BasicHeader("Sec-Fetch-Site",             "same-origin"),
+                        new BasicHeader("Sec-Fetch-Site",             "cross-site"),
                         new BasicHeader("Sec-Fetch-User",             "?1"),
                         new BasicHeader("Upgrade-Insecure-Requests",  "1"),
                         new BasicHeader(HttpHeaders.REFERER,          "https://portal.librus.pl/rodzina/synergia/loguj")));
