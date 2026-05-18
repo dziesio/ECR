@@ -15,6 +15,8 @@ import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpResponse;
 import org.apache.hc.client5.http.impl.classic.HttpClients;
 import org.apache.hc.client5.http.impl.cookie.BasicClientCookie;
+import org.apache.hc.client5.http.protocol.HttpClientContext;
+import org.apache.hc.client5.http.protocol.RedirectLocations;
 import org.apache.hc.core5.http.HttpHeaders;
 import org.apache.hc.core5.http.HttpHost;
 import org.apache.hc.core5.http.ParseException;
@@ -28,6 +30,7 @@ import org.springframework.stereotype.Component;
 
 import jakarta.annotation.PostConstruct;
 import java.io.IOException;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -42,7 +45,7 @@ import java.util.regex.Pattern;
 public class LibrusHttpClient {
 
     private static final String API_BASE_URL      = "https://api.librus.pl";
-    private static final String OAUTH_URL         = "https://api.librus.pl/OAuth/Authorization?client_id=46";
+    private static final String PORTAL_RODZINA_URL = "https://synergia.librus.pl/loguj/portalRodzina";
     private static final String PORTAL_REFERER    = "https://portal.librus.pl/";
 
     private static final String USER_AGENT =
@@ -181,8 +184,11 @@ public class LibrusHttpClient {
     }
 
     private void login(CloseableHttpClient client) throws IOException {
-        // Step 1: GET OAuth login form directly (loaded as iframe from portal.librus.pl)
-        String loginHtml = fetchOAuthPage(client);
+        // Step 1: GET portalRodzina → redirects to full OAuth URL with state param → login form HTML
+        String[] oauthPage = resolveOAuthPage(client);   // [0]=url, [1]=html
+        String oauthUrl  = oauthPage[0];
+        String loginHtml = oauthPage[1];
+        log.info("OAuth authorize URL: {}", oauthUrl);
         log.info("OAuth login page HTML (first 2000): {}",
                 loginHtml.substring(0, Math.min(2000, loginHtml.length())));
 
@@ -190,30 +196,43 @@ public class LibrusHttpClient {
         List<BasicNameValuePair> formParams = parseHiddenInputs(loginHtml);
         log.info("OAuth login form hidden fields: {}", formParams.stream().map(BasicNameValuePair::getName).toList());
         String xBaner = extractXBaner(loginHtml);
-        log.info("x-baner extracted from page: {}", xBaner != null ? xBaner : "(not found — using hardcoded fallback)");
+        log.info("x-baner extracted from page: {}", xBaner != null ? xBaner : "(not found — using fallback)");
 
         // Step 3: POST credentials → JSON {"goTo": "/OAuth/Authorization/..."}
-        String goTo = postCredentials(client, formParams, xBaner);
+        String goTo = postCredentials(client, oauthUrl, formParams, xBaner);
         log.info("OAuth goTo: {}", goTo);
 
         // Step 4: GET goTo → redirects back to synergia.librus.pl, setting session cookies
         HttpGet grant = new HttpGet(API_BASE_URL + goTo);
-        grant.addHeader(HttpHeaders.REFERER, OAUTH_URL);
+        grant.addHeader(HttpHeaders.REFERER, oauthUrl);
         try (CloseableHttpResponse resp = client.execute(grant)) {
             log.info("OAuth grant response: {}", resp.getCode());
             EntityUtils.consume(resp.getEntity());
         }
     }
 
-    private String fetchOAuthPage(CloseableHttpClient client) throws IOException {
-        HttpGet get = new HttpGet(OAUTH_URL);
-        try (CloseableHttpResponse resp = client.execute(get)) {
-            log.info("OAuth page response: HTTP {}", resp.getCode());
+    // portalRodzina sets up OAuth state and redirects to the full OAuth URL with response_type/scope/state params.
+    // Going directly to ?client_id=46 without those params returns invalid_request.
+    private String[] resolveOAuthPage(CloseableHttpClient client) throws IOException {
+        HttpGet get = new HttpGet(PORTAL_RODZINA_URL);
+        get.addHeader(HttpHeaders.REFERER, PORTAL_REFERER);
+
+        HttpClientContext context = HttpClientContext.create();
+        try (CloseableHttpResponse resp = client.execute(get, context)) {
+            String html;
             try {
-                return EntityUtils.toString(resp.getEntity(), StandardCharsets.UTF_8);
+                html = EntityUtils.toString(resp.getEntity(), StandardCharsets.UTF_8);
             } catch (ParseException e) {
-                return "";
+                html = "";
             }
+            String url = PORTAL_RODZINA_URL;
+            RedirectLocations locations = context.getRedirectLocations();
+            if (locations != null) {
+                List<URI> all = locations.getAll();
+                if (!all.isEmpty()) url = all.get(all.size() - 1).toString();
+            }
+            log.info("portalRodzina final URL after redirects: {}", url);
+            return new String[]{url, html};
         }
     }
 
@@ -259,16 +278,17 @@ public class LibrusHttpClient {
     }
 
     private String postCredentials(CloseableHttpClient client,
+                                   String oauthUrl,
                                    List<BasicNameValuePair> hiddenParams,
                                    String xBaner) throws IOException {
         List<BasicNameValuePair> allParams = new ArrayList<>(hiddenParams);
         allParams.add(new BasicNameValuePair("login", username));
         allParams.add(new BasicNameValuePair("pass",  password));
 
-        HttpPost post = new HttpPost(OAUTH_URL);
+        HttpPost post = new HttpPost(oauthUrl);
         post.setEntity(new UrlEncodedFormEntity(allParams, StandardCharsets.UTF_8));
         post.setHeader(HttpHeaders.ACCEPT,    "application/json, text/javascript, */*; q=0.01");
-        post.setHeader(HttpHeaders.REFERER,   OAUTH_URL);
+        post.setHeader(HttpHeaders.REFERER,   oauthUrl);
         post.setHeader("Origin",              API_BASE_URL);
         post.setHeader("X-Requested-With",    "XMLHttpRequest");
         post.setHeader("X-Baner",             xBaner != null ? xBaner : XBANER_FALLBACK);
