@@ -90,7 +90,7 @@ public class LibrusHttpClient {
         return proxies.get(ThreadLocalRandom.current().nextInt(proxies.size()));
     }
 
-    private static final int PROXY_RETRIES = 6;
+    private static final int PROXY_RETRIES = 12;
 
     public LibrusSession openSession() throws IOException {
         IOException lastEx = null;
