@@ -39,6 +39,19 @@ public class DataPersistenceService {
 
     private final java.util.Map<String, Source> sourceCache = new java.util.concurrent.ConcurrentHashMap<>();
 
+    /** Find or create without touching any existing fields — used by BC-only runs. */
+    @Transactional
+    public Student getOrCreateStudent(String librusUsername, String fallbackFullName) {
+        return studentRepository.findByLibrusUsername(librusUsername)
+                .orElseGet(() -> {
+                    Student s = new Student();
+                    s.setLibrusUsername(librusUsername);
+                    s.setFullName(fallbackFullName);
+                    log.info("Creating student record for '{}'", librusUsername);
+                    return studentRepository.save(s);
+                });
+    }
+
     @Transactional
     public Student findOrCreateStudent(String librusUsername, String fullName, String className) {
         return studentRepository.findByLibrusUsername(librusUsername)

@@ -105,7 +105,7 @@ public class ScrapingScheduler {
                 persistenceService.saveAnnouncements(student, result.announcements());
                 librusMsgs = result.messages();
             } catch (Exception e) {
-                log.error("Librus scraping failed: {}", e.getMessage());
+                log.error("Librus scraping failed: {}", e.getMessage(), e);
             }
 
             var student = persistenceService.findOrCreateStudent(username, studentName, studentClass);
@@ -142,7 +142,7 @@ public class ScrapingScheduler {
             var knownMessageIds = persistenceService.getExistingMessageIds();
             var bcResult = bcScraperService.scrapeMessages(knownMessageIds);
             persistenceService.linkStudentBcId(bcResult.bcId(), bcResult.bcFullName());
-            var student = persistenceService.findOrCreateStudent(username, fullName, null);
+            var student = persistenceService.getOrCreateStudent(username, fullName);
             persistenceService.saveMessages(student, bcResult.messages());
             log.info("BC scraping session completed");
         } catch (Throwable e) {
