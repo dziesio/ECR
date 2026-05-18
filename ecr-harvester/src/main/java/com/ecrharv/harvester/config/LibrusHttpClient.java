@@ -23,6 +23,7 @@ import org.apache.hc.core5.http.io.entity.EntityUtils;
 import org.apache.hc.core5.http.message.BasicHeader;
 import org.apache.hc.core5.http.message.BasicNameValuePair;
 import org.apache.hc.core5.util.Timeout;
+import org.jsoup.Jsoup;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -30,6 +31,7 @@ import jakarta.annotation.PostConstruct;
 import java.io.IOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
@@ -162,15 +164,21 @@ public class LibrusHttpClient {
     }
 
     private void login(CloseableHttpClient client) throws IOException {
-        // Step 1: GET portalRodzina → redirects to api.librus.pl/OAuth/Authorization?client_id=46
-        String oauthUrl = resolveOAuthUrl(client);
+        // Step 1: GET portalRodzina → follow redirects to OAuth login form; save URL + HTML
+        String[] oauthPage = resolveOAuthPage(client);   // [0]=url, [1]=html
+        String oauthUrl  = oauthPage[0];
+        String loginHtml = oauthPage[1];
         log.info("OAuth authorize URL: {}", oauthUrl);
 
-        // Step 2: POST credentials → JSON {"goTo": "/OAuth/Authorization/..."}
-        String goTo = postCredentials(client, oauthUrl);
+        // Step 2: Extract hidden form fields (CSRF tokens etc.) from the login page
+        List<BasicNameValuePair> formParams = parseHiddenInputs(loginHtml);
+        log.debug("OAuth login form hidden fields: {}", formParams.stream().map(BasicNameValuePair::getName).toList());
+
+        // Step 3: POST credentials → JSON {"goTo": "/OAuth/Authorization/..."}
+        String goTo = postCredentials(client, oauthUrl, formParams);
         log.info("OAuth goTo: {}", goTo);
 
-        // Step 3: GET goTo → redirects back to synergia.librus.pl, setting session cookies
+        // Step 4: GET goTo → redirects back to synergia.librus.pl, setting session cookies
         HttpGet grant = new HttpGet(API_BASE_URL + goTo);
         grant.addHeader(HttpHeaders.REFERER, oauthUrl);
         try (CloseableHttpResponse resp = client.execute(grant)) {
@@ -179,32 +187,61 @@ public class LibrusHttpClient {
         }
     }
 
-    private String resolveOAuthUrl(CloseableHttpClient client) throws IOException {
+    // Returns [oauthUrl, loginPageHtml]
+    private String[] resolveOAuthPage(CloseableHttpClient client) throws IOException {
         HttpGet get = new HttpGet(PORTAL_RODZINA_URL);
         get.addHeader(HttpHeaders.REFERER, "https://portal.librus.pl/");
 
         HttpClientContext context = HttpClientContext.create();
         try (CloseableHttpResponse resp = client.execute(get, context)) {
-            EntityUtils.consume(resp.getEntity());
+            String html;
+            try {
+                html = EntityUtils.toString(resp.getEntity(), StandardCharsets.UTF_8);
+            } catch (ParseException e) {
+                html = "";
+            }
 
+            String url = DEFAULT_OAUTH_URL;
             RedirectLocations locations = context.getRedirectLocations();
             if (locations != null) {
                 List<URI> all = locations.getAll();
-                if (!all.isEmpty()) return all.get(all.size() - 1).toString();
+                if (!all.isEmpty()) url = all.get(all.size() - 1).toString();
             }
-            log.warn("No redirects from portalRodzina — using default OAuth URL");
-            return DEFAULT_OAUTH_URL;
+            if (DEFAULT_OAUTH_URL.equals(url)) {
+                log.warn("No redirects from portalRodzina — using default OAuth URL");
+            }
+            return new String[]{url, html};
         }
     }
 
-    private String postCredentials(CloseableHttpClient client, String oauthUrl) throws IOException {
+    private List<BasicNameValuePair> parseHiddenInputs(String html) {
+        List<BasicNameValuePair> params = new ArrayList<>();
+        params.add(new BasicNameValuePair("action", "login"));
+        if (html == null || html.isBlank()) return params;
+        try {
+            for (var input : Jsoup.parse(html).select("form input[type=hidden]")) {
+                String name = input.attr("name").trim();
+                if (!name.isBlank() && !name.equals("action")) {
+                    params.add(new BasicNameValuePair(name, input.attr("value")));
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Failed to parse OAuth login form: {}", e.getMessage());
+        }
+        return params;
+    }
+
+    private String postCredentials(CloseableHttpClient client, String oauthUrl,
+                                   List<BasicNameValuePair> hiddenParams) throws IOException {
+        List<BasicNameValuePair> allParams = new ArrayList<>(hiddenParams);
+        allParams.add(new BasicNameValuePair("login", username));
+        allParams.add(new BasicNameValuePair("pass",  password));
+
         HttpPost post = new HttpPost(oauthUrl);
-        post.setEntity(new UrlEncodedFormEntity(List.of(
-                new BasicNameValuePair("action", "login"),
-                new BasicNameValuePair("login",  username),
-                new BasicNameValuePair("pass",   password)
-        ), StandardCharsets.UTF_8));
-        post.addHeader(HttpHeaders.REFERER, oauthUrl);
+        post.setEntity(new UrlEncodedFormEntity(allParams, StandardCharsets.UTF_8));
+        post.addHeader(HttpHeaders.REFERER,  oauthUrl);
+        post.addHeader("X-Requested-With",   "XMLHttpRequest");
+        post.setHeader(HttpHeaders.ACCEPT,   "application/json, */*;q=0.5");
 
         try (CloseableHttpResponse resp = client.execute(post)) {
             String body;
