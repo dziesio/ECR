@@ -9,9 +9,9 @@ COPY src ./src
 RUN mvn package -DskipTests -B -q
 
 # ── Stage 2: Runtime ──────────────────────────────────────────────────────────
-FROM eclipse-temurin:21-jre-alpine
+FROM eclipse-temurin:21-jre-jammy
 
-RUN addgroup -S harvester && adduser -S -G harvester harvester
+RUN groupadd -r harvester && useradd -r -g harvester harvester
 
 WORKDIR /app
 COPY --from=build /app/target/*.jar app.jar
