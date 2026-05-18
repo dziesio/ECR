@@ -61,6 +61,8 @@ services:
       BC_ENABLED: ${BC_ENABLED:-false}
       BC_USERNAME: ${BC_USERNAME:-}
       BC_PASSWORD: ${BC_PASSWORD:-}
+      BC_SCRAPER_PEAK_INTERVAL_MINUTES: ${BC_SCRAPER_PEAK_INTERVAL_MINUTES:-15}
+      BC_SCRAPER_OFFPEAK_INTERVAL_MINUTES: ${BC_SCRAPER_OFFPEAK_INTERVAL_MINUTES:-120}
       JAVA_TOOL_OPTIONS: "-Xms48m -Xmx160m -XX:MaxMetaspaceSize=80m -XX:ReservedCodeCacheSize=32m -XX:+UseG1GC -XX:+UseContainerSupport"
     deploy:
       resources:
