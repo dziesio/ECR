@@ -90,7 +90,7 @@ public class LibrusHttpClient {
         return proxies.get(ThreadLocalRandom.current().nextInt(proxies.size()));
     }
 
-    private static final int PROXY_RETRIES = 3;
+    private static final int PROXY_RETRIES = 6;
 
     public LibrusSession openSession() throws IOException {
         IOException lastEx = null;
@@ -105,11 +105,12 @@ public class LibrusHttpClient {
             } catch (IOException e) {
                 client.close();
                 lastEx = e;
-                boolean proxyError = e.getMessage() != null &&
+                boolean retryable = !proxies.isEmpty() && e.getMessage() != null &&
                         (e.getMessage().contains("504") || e.getMessage().contains("502") ||
-                         e.getMessage().contains("CONNECT") || e.getMessage().contains("proxy"));
-                if (proxyError && attempt < PROXY_RETRIES) {
-                    log.warn("Proxy error on attempt {}/{} — retrying with new connection: {}",
+                         e.getMessage().contains("CONNECT") || e.getMessage().contains("proxy") ||
+                         e.getMessage().contains("WAF") || e.getMessage().contains("not JSON"));
+                if (retryable && attempt < PROXY_RETRIES) {
+                    log.warn("Retryable error on attempt {}/{} — rotating proxy connection: {}",
                             attempt, PROXY_RETRIES, e.getMessage());
                 } else {
                     throw e;
@@ -232,6 +233,9 @@ public class LibrusHttpClient {
                 if (!all.isEmpty()) url = all.get(all.size() - 1).toString();
             }
             log.info("portalRodzina final URL after redirects: {}", url);
+            if (html.contains("Web Page Blocked") || html.contains("Attack ID")) {
+                throw new IOException("WAF block on proxy IP — rotating");
+            }
             return new String[]{url, html};
         }
     }
