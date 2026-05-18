@@ -34,6 +34,8 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Slf4j
 @Component
@@ -181,15 +183,17 @@ public class LibrusHttpClient {
     private void login(CloseableHttpClient client) throws IOException {
         // Step 1: GET OAuth login form directly (loaded as iframe from portal.librus.pl)
         String loginHtml = fetchOAuthPage(client);
-        log.info("OAuth login page HTML (first 600): {}",
-                loginHtml.substring(0, Math.min(600, loginHtml.length())));
+        log.info("OAuth login page HTML (first 2000): {}",
+                loginHtml.substring(0, Math.min(2000, loginHtml.length())));
 
-        // Step 2: Extract hidden form fields (CSRF tokens etc.)
+        // Step 2: Extract hidden form fields and x-baner token from the page
         List<BasicNameValuePair> formParams = parseHiddenInputs(loginHtml);
         log.info("OAuth login form hidden fields: {}", formParams.stream().map(BasicNameValuePair::getName).toList());
+        String xBaner = extractXBaner(loginHtml);
+        log.info("x-baner extracted from page: {}", xBaner != null ? xBaner : "(not found — using hardcoded fallback)");
 
         // Step 3: POST credentials → JSON {"goTo": "/OAuth/Authorization/..."}
-        String goTo = postCredentials(client, formParams);
+        String goTo = postCredentials(client, formParams, xBaner);
         log.info("OAuth goTo: {}", goTo);
 
         // Step 4: GET goTo → redirects back to synergia.librus.pl, setting session cookies
@@ -213,6 +217,30 @@ public class LibrusHttpClient {
         }
     }
 
+    // x-baner is a token embedded in the OAuth page JS, sent as a request header on credential POST.
+    // Pattern: uppercase letters and underscores, typically two segments separated by _.
+    private static final Pattern XBANER_PATTERN = Pattern.compile("[A-Z]{5,}_[A-Z]{5,}");
+    private static final String  XBANER_FALLBACK = "DBEDIFJDHMHHEJMFMHF_EKKMEHDJHIGII";
+
+    private String extractXBaner(String html) {
+        if (html == null || html.isBlank()) return null;
+        try {
+            // Search inside <script> tags for the token pattern
+            for (var script : Jsoup.parse(html).select("script")) {
+                String src = script.data();
+                Matcher m = XBANER_PATTERN.matcher(src);
+                while (m.find()) {
+                    String candidate = m.group();
+                    // Reject short/common JS identifiers — real token is 30+ chars
+                    if (candidate.length() >= 30) return candidate;
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Failed to extract x-baner from page: {}", e.getMessage());
+        }
+        return null;
+    }
+
     private List<BasicNameValuePair> parseHiddenInputs(String html) {
         List<BasicNameValuePair> params = new ArrayList<>();
         params.add(new BasicNameValuePair("action", "login"));
@@ -231,7 +259,8 @@ public class LibrusHttpClient {
     }
 
     private String postCredentials(CloseableHttpClient client,
-                                   List<BasicNameValuePair> hiddenParams) throws IOException {
+                                   List<BasicNameValuePair> hiddenParams,
+                                   String xBaner) throws IOException {
         List<BasicNameValuePair> allParams = new ArrayList<>(hiddenParams);
         allParams.add(new BasicNameValuePair("login", username));
         allParams.add(new BasicNameValuePair("pass",  password));
@@ -242,7 +271,7 @@ public class LibrusHttpClient {
         post.setHeader(HttpHeaders.REFERER,   OAUTH_URL);
         post.setHeader("Origin",              API_BASE_URL);
         post.setHeader("X-Requested-With",    "XMLHttpRequest");
-        post.setHeader("X-Baner",             "DBEDIFJDHMHHEJMFMHF_EKKMEHDJHIGII");
+        post.setHeader("X-Baner",             xBaner != null ? xBaner : XBANER_FALLBACK);
         post.setHeader("Sec-Fetch-Dest",      "empty");
         post.setHeader("Sec-Fetch-Mode",      "cors");
         post.setHeader("Sec-Fetch-Site",      "same-origin");
@@ -255,8 +284,9 @@ public class LibrusHttpClient {
             } catch (ParseException e) {
                 throw new IOException("Failed to read login response", e);
             }
-            log.info("Login response ({}) body (first 1000): {}", resp.getCode(),
-                    body.substring(0, Math.min(1000, body.length())));
+            var ct = resp.getFirstHeader("Content-Type");
+            log.info("Login response HTTP {} Content-Type={} body: [{}]",
+                    resp.getCode(), ct != null ? ct.getValue() : "none", body);
 
             JsonNode node;
             try {
