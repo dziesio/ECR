@@ -18,6 +18,7 @@ ECR_API_BASE_URL  = os.getenv("ECR_API_BASE_URL", "http://ecr-api:8081")
 BARK_DEVICE_KEYS  = [k.strip() for k in os.getenv("BARK_DEVICE_KEY", "").split(",") if k.strip()]
 BARK_ICON_URL     = os.getenv("BARK_ICON_URL", "https://portal.librus.pl/favicon.ico")
 BARK_BC_ICON_URL  = os.getenv("BARK_BC_ICON_URL", "")
+FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "").rstrip("/")
 POLL_INTERVAL_S   = int(os.getenv("NOTIFIER_POLL_INTERVAL_MS", "300000")) / 1000
 
 _SOURCE_DISPLAY = {"BRITISH_COUNCIL": "British Council"}
@@ -48,15 +49,20 @@ def _icon_for_source(source: str | None) -> str:
     return _SOURCE_ICON.get(source or "", "") or BARK_ICON_URL
 
 
-async def _send_bark(title: str, body: str, icon: str = ""):
+async def _send_bark(title: str, body: str, icon: str = "", open_url: str = ""):
     async with httpx.AsyncClient(timeout=10) as client:
         for key in BARK_DEVICE_KEYS:
-            url = f"https://api.day.app/{key}/{quote(title)}/{quote(body)}"
+            bark_url = f"https://api.day.app/{key}/{quote(title)}/{quote(body)}"
+            params = {}
             effective_icon = icon or BARK_ICON_URL
             if effective_icon:
-                url += f"?icon={quote(effective_icon, safe=':/')}"
+                params["icon"] = effective_icon
+            if open_url:
+                params["url"] = open_url
+            if params:
+                bark_url += "?" + "&".join(f"{k}={quote(v, safe=':/')}" for k, v in params.items())
             try:
-                r = await client.get(url)
+                r = await client.get(bark_url)
                 if r.status_code != 200:
                     log.warning("Bark HTTP %s for key …%s: %s", r.status_code, key[-6:], title)
             except Exception as exc:
@@ -72,6 +78,7 @@ async def _poll_once():
                     sid = student["id"]
 
                     # ── Messages (INBOX only) ──────────────────────────────
+                    student_url = f"{FRONTEND_BASE_URL}/student/{sid}" if FRONTEND_BASE_URL else ""
                     for msg in (await http.get(f"/api/students/{sid}/messages")).json():
                         if msg.get("messageType") != "INBOX":
                             continue
@@ -85,7 +92,7 @@ async def _poll_once():
                         role   = msg.get("senderRole") or ""
                         title  = f"{src}: New message – {sender}" + (f" [{role}]" if role else "")
                         body   = msg.get("subject", "")
-                        await _send_bark(title, body, _icon_for_source(msg.get("messageSource")))
+                        await _send_bark(title, body, _icon_for_source(msg.get("messageSource")), student_url)
                         await conn.execute(
                             "INSERT INTO notifications(entity_id,entity_type,title,body)"
                             " VALUES($1,'MESSAGE',$2,$3) ON CONFLICT DO NOTHING",
@@ -105,7 +112,7 @@ async def _poll_once():
                         role   = ann.get("authorRole") or ""
                         title  = f"{src}: Announcement – {author}" + (f" [{role}]" if role else "")
                         body   = ann.get("title", "")
-                        await _send_bark(title, body, _icon_for_source(ann.get("source")))
+                        await _send_bark(title, body, _icon_for_source(ann.get("source")), student_url)
                         await conn.execute(
                             "INSERT INTO notifications(entity_id,entity_type,title,body)"
                             " VALUES($1,'ANNOUNCEMENT',$2,$3) ON CONFLICT DO NOTHING",
