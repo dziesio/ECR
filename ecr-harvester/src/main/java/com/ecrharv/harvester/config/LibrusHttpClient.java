@@ -171,8 +171,10 @@ public class LibrusHttpClient {
         log.info("OAuth authorize URL: {}", oauthUrl);
 
         // Step 2: Extract hidden form fields (CSRF tokens etc.) from the login page
+        log.info("OAuth login page HTML (first 600): {}",
+                loginHtml.substring(0, Math.min(600, loginHtml.length())));
         List<BasicNameValuePair> formParams = parseHiddenInputs(loginHtml);
-        log.debug("OAuth login form hidden fields: {}", formParams.stream().map(BasicNameValuePair::getName).toList());
+        log.info("OAuth login form hidden fields: {}", formParams.stream().map(BasicNameValuePair::getName).toList());
 
         // Step 3: POST credentials → JSON {"goTo": "/OAuth/Authorization/..."}
         String goTo = postCredentials(client, oauthUrl, formParams);
@@ -250,8 +252,8 @@ public class LibrusHttpClient {
             } catch (ParseException e) {
                 throw new IOException("Failed to read login response", e);
             }
-            log.debug("Login response ({}): {}", resp.getCode(),
-                    body.substring(0, Math.min(300, body.length())));
+            log.info("Login response ({}) body (first 1000): {}", resp.getCode(),
+                    body.substring(0, Math.min(1000, body.length())));
 
             JsonNode node;
             try {
