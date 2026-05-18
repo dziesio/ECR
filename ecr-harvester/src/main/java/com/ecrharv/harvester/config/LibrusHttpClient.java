@@ -109,8 +109,11 @@ public class LibrusHttpClient {
         throw lastEx;
     }
 
-    // Headers that must not appear in proxy CONNECT tunnel requests.
+    // Only Host + Proxy-Authorization belong in CONNECT tunnel requests.
+    // Strip every custom default header so the CONNECT looks like a plain HTTP client.
     private static final Set<String> CONNECT_STRIP_HEADERS = Set.of(
+            "user-agent",
+            "accept", "accept-language", "accept-encoding",
             "sec-ch-ua", "sec-ch-ua-mobile", "sec-ch-ua-platform",
             "sec-fetch-dest", "sec-fetch-mode", "sec-fetch-site", "sec-fetch-user",
             "upgrade-insecure-requests", "referer"

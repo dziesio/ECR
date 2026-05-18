@@ -108,7 +108,7 @@ public class ScrapingScheduler {
                 log.error("Librus scraping failed: {}", e.getMessage(), e);
             }
 
-            var student = persistenceService.findOrCreateStudent(username, studentName, studentClass);
+            var student = persistenceService.getOrCreateStudent(username, studentName);
             persistenceService.saveMessages(student, librusMsgs);
 
             log.info("Librus scraping session completed");
