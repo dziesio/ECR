@@ -105,10 +105,10 @@ public class LibrusHttpClient {
             } catch (IOException e) {
                 client.close();
                 lastEx = e;
-                boolean retryable = !proxies.isEmpty() && e.getMessage() != null &&
-                        (e.getMessage().contains("504") || e.getMessage().contains("502") ||
-                         e.getMessage().contains("CONNECT") || e.getMessage().contains("proxy") ||
-                         e.getMessage().contains("WAF") || e.getMessage().contains("not JSON"));
+                // Don't retry credential failures — wrong password won't improve with a new IP.
+                boolean credentialError = e.getMessage() != null &&
+                        e.getMessage().contains("no 'goTo' in response");
+                boolean retryable = !proxies.isEmpty() && !credentialError;
                 if (retryable && attempt < PROXY_RETRIES) {
                     log.warn("Retryable error on attempt {}/{} — rotating proxy connection: {}",
                             attempt, PROXY_RETRIES, e.getMessage());
